@@ -1,8 +1,46 @@
 # Onda 1 — Codex / Frente B
 
 Data: 04/11/2026. Branch: `ondas/camera-e-arquitetura`.
-Situação: **itens 1 e 2 concluídos; item 3 aguardando ordem do coordenador**.
-Commit de código/testes: `e5eb54d`.
+Situação: **itens 1, 2 e 3 concluídos**; serviços reais preservados.
+Commits de código/testes: `e5eb54d` (itens 1/2) e `c90843b` (item 3).
+
+## Atualização — item 3 após o commit Viga `85711e8`
+
+Executado por ordem do coordenador, usando os contratos publicados:
+
+- `projects.service.ts`: `getProject` passa JSON parseado por
+  `migrateProjectScene`, dentro do mesmo try/catch. Falha de parse ou migração
+  retorna o mesmo 500. **Nenhum UPDATE no caminho de leitura**.
+- `createProject` grava `validatedInput.scene.schemaVersion` na coluna
+  `schema_version`; `updateProject` também atualiza a coluna atomicamente com
+  cena/revisão. Não há migração manual nem escrita no banco do usuário.
+- Cenas passadas a `applyQueueCommand` no teste de fila são migradas para v2.
+  A cobertura de percurso legado foi mantida usando entrada HTTP v1 transitória.
+  A expectativa de versão inválida passou de 2 para 999, pois 2 agora é válida.
+- Novo `back/test/project-versions.integration.test.mjs`, com banco temporário:
+  cadeia v2 de três pessoas, mudança de espaçamento/rotação e reabertura exata
+  após restart do **app de teste em porta efêmera**; persistência da coluna 2;
+  membros ausentes/duplicados/inexistentes, pessoa órfã e spacing adulterado
+  rejeitados com 400 sem mudar linha/revisão; conflito de revisão com 409.
+- GET repetido de registro v1 com duas pessoas preserva posições, yaw, ordem e
+  referências, devolve v2 com cadeia vazia e **não altera nenhum byte da linha
+  SQLite**, inclusive scene JSON indentado, schema_version=1, revision=7,
+  timestamps e preview. Conferido também `total_changes()` sem incremento.
+- Só conversão explícita e PATCH avançam esse registro para revisão 8/coluna 2.
+  POST v1 transitório é aceito/migrado; POST v2 novo com pessoas fora da cadeia
+  é rejeitado. JSON persistido inválido e versão não suportada retornam o mesmo
+  500, preservando as linhas.
+
+Comandos após esses ajustes: `npm run typecheck:back`, `npm run build:back` e
+`npm run test:back`: **todos exit 0; 16 testes aprovados, 0 falhas**.
+`git diff --check` dos arquivos do escopo: sem erros (avisos LF/CRLF somente).
+
+**Porta 3001 não foi reiniciada** nesta etapa: mantém PID 20276. Porta 3000
+mantém PID 39332; ngrok mantém PIDs 24244/37260. Nenhuma escrita/leitura de cenas
+nos 21 projetos reais foi necessária nesta etapa. A validação desses 21 na cópia
+do banco é da Viga, usando `c90843b`; não foi alegada como executada pelo Codex.
+O `dist` foi recompilado, mas o serviço em execução permanece no código anterior,
+compatível com o bundle v1 da 3000, até ordem da Onda 3.
 
 ## Feito — item 1
 
@@ -115,10 +153,8 @@ contratos faz parte do item 3 e depende da liberação do coordenador.
 
 ## Pendente / contratos / dúvidas
 
-- **Item 3 não iniciado.** Aguardar commit da Viga e ordem do coordenador para
-  os três ajustes de `projects.service.ts`/testes indicados em
-  `ONDA-1-viga-contratos.md`, junto da cobertura de cadeia/legado/inconsistência/409.
-  Nenhum import de contrato ainda não publicado foi introduzido.
+- **Item 3 concluído**, conforme atualização acima e commit `c90843b`.
+  Import de migração adicionado somente após o commit autorizado da Viga.
 - Nenhum contrato de `back/core/**` ou `validation*` foi modificado pelo Codex.
 - Nenhum manifesto/lockfile/front foi modificado ou incluído nos commits do Codex.
 - Pendente no aparelho: câmera, tracking, touch físico e iPhone não foram testados
