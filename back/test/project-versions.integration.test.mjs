@@ -139,16 +139,17 @@ test('Nest scene versions: connected chain, legacy reads and atomic revisions', 
       assert.deepEqual(JSON.parse(row('legacy-record').scene), saved.scene);
     });
 
-    await t.test('accepts transitional v1 input but rejects new v2 projects containing unlinked people', async () => {
+    await t.test('rejects v1 saves and new v2 projects containing unlinked people without changing stored rows', async () => {
       const legacy = legacyScene();
       legacy.people = [{ id: 'legacy-person', routeId: null, distanceAlongRouteMeters: null, position: { x: 2, z: 4 }, yawRadians: 0 }];
-      const accepted = await write('POST', '', { name: 'Transitional v1 client', scene: legacy, expectedRevision: null });
-      assert.equal(accepted.status, 201, await accepted.clone().text());
-      const saved = await accepted.json();
-      assert.equal(saved.scene.schemaVersion, 2);
-      assert.deepEqual(saved.scene.queue.personIds, []);
-      assert.deepEqual(saved.scene.people, legacy.people);
-      assert.equal(row(saved.id).schema_version, 2);
+      const countBefore = db().prepare('SELECT COUNT(*) AS count FROM projects').get().count;
+      const rejectedCreate = await write('POST', '', { name: 'Obsolete v1 client', scene: legacy, expectedRevision: null });
+      assert.equal(rejectedCreate.status, 400, await rejectedCreate.clone().text());
+      assert.equal(db().prepare('SELECT COUNT(*) AS count FROM projects').get().count, countBefore);
+      const before = row(chainProject.id);
+      const rejectedUpdate = await write('PATCH', '/' + chainProject.id, { name: 'Obsolete update', scene: legacy, expectedRevision: before.revision });
+      assert.equal(rejectedUpdate.status, 400, await rejectedUpdate.clone().text());
+      assert.deepEqual(row(chainProject.id), before);
       const rejected = await write('POST', '', { name: 'New unlinked v2', scene: migrateProjectScene(legacy), expectedRevision: null });
       assert.equal(rejected.status, 400, await rejected.clone().text());
     });

@@ -43,10 +43,11 @@ export function validateSaveProjectInput(input: unknown, isCreation: boolean): S
   if (isCreation ? parsed.data.expectedRevision !== null : parsed.data.expectedRevision === null) {
     bad(isCreation ? 'expectedRevision deve ser null na criação' : 'expectedRevision deve ser inteiro positivo na atualização');
   }
+  if ((parsed.data.scene as { schemaVersion?: unknown } | null)?.schemaVersion !== 2) {
+    bad('Salvamento exige schemaVersion 2');
+  }
   const scene = validateProjectScene(parsed.data.scene);
-  // v1 segue aceito na transição do front; v2 nova já nasce com a fila interligada.
-  const sentAsCurrent = (parsed.data.scene as { schemaVersion?: unknown }).schemaVersion === scene.schemaVersion;
-  if (isCreation && sentAsCurrent && getQueueMode(scene) === 'legacy') bad('Projeto novo não pode ter pessoas fora da fila');
+  if (isCreation && getQueueMode(scene) === 'legacy') bad('Projeto novo não pode ter pessoas fora da fila');
   return { name: parsed.data.name, scene, expectedRevision: parsed.data.expectedRevision };
 }
 

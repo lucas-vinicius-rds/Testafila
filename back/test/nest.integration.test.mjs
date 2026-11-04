@@ -40,7 +40,7 @@ test('Shared project flows and exact trusted origins run through the Nest applic
     const health = await fetch(base + '/api/health');
     assert.deepEqual(await health.json(), { status: 'ok' });
     const scene = {
-      schemaVersion: 1, units: 'meters', coordinateSystem: 'right-handed-y-up-xz-floor',
+      schemaVersion: 2, queue: { personIds: [] }, units: 'meters', coordinateSystem: 'right-handed-y-up-xz-floor',
       environment: { perimeter: [{ id: 'v1', x: 0, z: 0 }, { id: 'v2', x: 5, z: 0 }, { id: 'v3', x: 5, z: 5 }, { id: 'v4', x: 0, z: 5 }], wallHeightMeters: 3, measurement: { source: 'manual', recordedAt: new Date().toISOString(), checks: [] }, confirmedAt: null },
       restrictedAreas: [], posts: [], belts: [], routes: [], people: [],
       simulation: { spacingMeters: 0.8, personHeightMeters: 1.7, personRadiusMeters: 0.25, clearanceMeters: 0.1 },

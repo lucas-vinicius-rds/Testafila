@@ -11,6 +11,7 @@ test('Nest persists valid queue commands and rejects altered geometry', async ()
   process.env.APP_ORIGIN = 'http://localhost:3000';
   const { NestFactory } = await import('@nestjs/core');
   const { AppModule } = await import('../dist/src/app.module.js');
+  const { DatabaseService } = await import('../dist/src/infra/database/database.service.js');
   const { applyQueueCommand } = await import('../dist/core/domain/queue/index.js');
   const { migrateProjectScene } = await import('../dist/core/domain/queue/migration.js');
   let app;
@@ -44,13 +45,15 @@ test('Nest persists valid queue commands and rejects altered geometry', async ()
       scene = result.scene;
     }
     assert.equal(scene.people.length, 9);
-    // Preserve legacy route coverage through the API's transitional v1 input.
+    // Historical routes are seeded only in this disposable database. New v1 saves are forbidden.
     const legacyInputScene = { ...scene, schemaVersion: 1 };
     delete legacyInputScene.queue;
     const input = { name: 'Fila integrada', scene: legacyInputScene, expectedRevision: null };
-    const createdResponse = await fetch(`${base}/api/projects`, { method: 'POST', headers, body: JSON.stringify(input) });
+    app.get(DatabaseService).prepare('INSERT INTO projects (id, owner_id, name, created_at, updated_at, revision, schema_version, scene, preview_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run('legacy-route', 'local-project-owner', input.name, now, now, 1, 1, JSON.stringify(legacyInputScene), null);
+    const createdResponse = await fetch(`${base}/api/projects/legacy-route`);
     const createdBody = await createdResponse.text();
-    assert.equal(createdResponse.status, 201, createdBody);
+    assert.equal(createdResponse.status, 200, createdBody);
     const created = JSON.parse(createdBody);
     assert.deepEqual(created.scene, scene);
 

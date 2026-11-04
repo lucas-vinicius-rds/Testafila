@@ -5,7 +5,8 @@ import { AppError } from '../dist/src/common/types.js';
 
 function createValidScene() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    queue: { personIds: [] },
     units: 'meters',
     coordinateSystem: 'right-handed-y-up-xz-floor',
     environment: {
@@ -107,6 +108,7 @@ test('Scene and Input Validation', async (t) => {
 
   await t.test('validates SaveProjectInput creation vs update expectedRevision', () => {
     const scene = createValidScene();
+    scene.people = [];
 
     // Creation with expectedRevision null -> valid
     const validCreation = validateSaveProjectInput({ name: 'Fila A', scene, expectedRevision: null }, true);
