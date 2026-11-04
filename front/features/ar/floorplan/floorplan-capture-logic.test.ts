@@ -25,7 +25,8 @@ test('marking is blocked unless the session is visible with a floor hit', () => 
 });
 
 test('walls are measured along the floor, in meters, without correction', () => {
-  assert.equal(floorDistanceMeters({ x: 0, y: 0, z: 0 }, { x: 3, y: 0.4, z: 4 }), 5);
+  const [low, high] = [hit, { x: 4, y: 0.4, z: 5 }];
+  assert.equal(floorDistanceMeters(low, high), 5);
   assert.deepEqual(wallLengthsMeters(markAll([[0, 0], [3, 0], [3, 4]])), [3, 4]);
   assert.deepEqual(wallLengthsMeters([]), []);
 });
@@ -37,11 +38,11 @@ test('the closing wall only exists from three corners on', () => {
 
 test('a tap right on an existing corner is refused and keeps the corners', () => {
   const corners = markAll([[0, 0], [3, 0]]);
-  const result = addCorner(corners, { x: 3.05, y: 0, z: 0 });
+  const result = addCorner(corners, { x: 3.05, z: 0 });
   assert.equal(result.added, false);
   assert.equal(result.corners, corners);
-  assert.equal(addCorner(corners, { x: 0.02, y: 0, z: 0 }).added, false);
-  assert.equal(addCorner(corners, { x: 3, y: 0, z: 2 }).added, true);
+  assert.equal(addCorner(corners, { x: 0.02, z: 0 }).added, false);
+  assert.equal(addCorner(corners, { x: 3, z: 2 }).added, true);
 });
 
 test('undo removes only the last corner', () => {

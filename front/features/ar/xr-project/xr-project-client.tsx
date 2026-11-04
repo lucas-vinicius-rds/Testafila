@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import * as THREE from 'three';
-import type { PointXZ, ProjectScene, SavedProject } from '@testafila/core/contracts/project';
+import type { PointXZ, SavedProject } from '@testafila/core/contracts/project';
 import { apiFetch, readApiError } from '../../../shared/http.ts';
+import { buildProjectObject, disposeObject, projectColors } from '../scene/project-objects.ts';
 import type { ArCapabilityState } from '../session/use-ar-capability.ts';
 import { useArCapability } from '../session/use-ar-capability.ts';
 import { createXrSessionController, preventXrSelectOn, type XrTracking } from '../session/xr-session.ts';
@@ -19,8 +20,6 @@ type Runtime = {
   reticle: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
   projectRoot: THREE.Group;
 };
-
-const projectColors = { floor: 0xf8f6ef, line: 0x214b40, wall: 0xd8dcd4, area: 0xb6c8bc, belt: 0x355b48, person: 0x606963 };
 
 function capabilityCopy({ status, reason }: ArCapabilityState): string {
   switch (status) {
@@ -40,91 +39,6 @@ function errorMessage(error: unknown): string {
     if (error.name === 'NotAllowedError') return 'A sessão XR foi recusada. Aceite a permissão e inicie novamente pelo botão.';
   }
   return error instanceof Error ? `Não foi possível iniciar a sessão WebXR: ${error.message}` : 'Não foi possível iniciar a sessão WebXR.';
-}
-
-function disposeObject(root: THREE.Object3D) {
-  root.traverse((child) => {
-    const mesh = child as THREE.Mesh;
-    mesh.geometry?.dispose();
-    const materials = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
-    for (const material of materials) material.dispose();
-  });
-}
-
-function polygonGeometry(points: readonly PointXZ[], y: number): THREE.BufferGeometry | null {
-  if (points.length < 3) return null;
-  const contour = points.map((point) => new THREE.Vector2(point.x, point.z));
-  const triangles = THREE.ShapeUtils.triangulateShape(contour, []);
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(contour.flatMap((point) => [point.x, y, point.y]), 3));
-  geometry.setIndex(triangles.flatMap(([a, b, c]) => [a, c, b]));
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
-function cylinderBetween(start: THREE.Vector3, end: THREE.Vector3, radius: number, material: THREE.Material) {
-  const direction = end.clone().sub(start);
-  const length = direction.length();
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 10), material);
-  mesh.position.copy(start).add(end).multiplyScalar(0.5);
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
-  return mesh;
-}
-
-function buildProjectObject(project: ProjectScene): THREE.Group {
-  const root = new THREE.Group();
-  const floorGeometry = polygonGeometry(project.environment.perimeter, 0);
-  if (floorGeometry) root.add(new THREE.Mesh(floorGeometry, new THREE.MeshBasicMaterial({ color: projectColors.floor, transparent: true, opacity: 0.30, side: THREE.DoubleSide, depthWrite: false })));
-
-  const wallMaterial = new THREE.MeshBasicMaterial({ color: projectColors.wall, transparent: true, opacity: 0.35, depthWrite: false });
-  for (let index = 0; index < project.environment.perimeter.length; index += 1) {
-    const start = project.environment.perimeter[index];
-    const end = project.environment.perimeter[(index + 1) % project.environment.perimeter.length];
-    const length = Math.hypot(end.x - start.x, end.z - start.z);
-    if (length < 1e-6) continue;
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(length, project.environment.wallHeightMeters, 0.035), wallMaterial.clone());
-    wall.position.set((start.x + end.x) / 2, project.environment.wallHeightMeters / 2, (start.z + end.z) / 2);
-    wall.rotation.y = -Math.atan2(end.z - start.z, end.x - start.x);
-    root.add(wall);
-  }
-
-  for (const area of project.restrictedAreas) {
-    const geometry = polygonGeometry(area.vertices, 0.008);
-    if (geometry) root.add(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: projectColors.area, transparent: true, opacity: 0.48, side: THREE.DoubleSide, depthWrite: false })));
-  }
-
-  const posts = new Map(project.posts.map((post) => [post.id, post]));
-  for (const post of project.posts) {
-    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(post.baseRadiusMeters, post.baseRadiusMeters, post.heightMeters, 14), new THREE.MeshBasicMaterial({ color: projectColors.line }));
-    mesh.position.set(post.position.x, post.heightMeters / 2, post.position.z);
-    root.add(mesh);
-  }
-  for (const belt of project.belts) {
-    const from = posts.get(belt.fromPostId); const to = posts.get(belt.toPostId);
-    if (!from || !to) continue;
-    root.add(cylinderBetween(new THREE.Vector3(from.position.x, belt.heightMeters, from.position.z), new THREE.Vector3(to.position.x, belt.heightMeters, to.position.z), 0.012, new THREE.MeshBasicMaterial({ color: projectColors.belt })));
-  }
-  for (const route of project.routes) {
-    if (route.points.length < 2) continue;
-    const geometry = new THREE.BufferGeometry().setFromPoints(route.points.map((point) => new THREE.Vector3(point.x, 0.02, point.z)));
-    root.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: projectColors.belt, transparent: true, opacity: 0.7 })));
-  }
-  for (const person of project.people) {
-    const personObject = new THREE.Group();
-    const height = project.simulation.personHeightMeters;
-    const radius = project.simulation.personRadiusMeters;
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(radius * 0.65, Math.max(0.01, height * 0.56), 5, 10), new THREE.MeshBasicMaterial({ color: projectColors.person }));
-    body.position.y = height / 2;
-    personObject.add(body);
-    const direction = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.38, radius * 0.9, 8), new THREE.MeshBasicMaterial({ color: projectColors.line }));
-    direction.rotation.x = Math.PI / 2;
-    direction.position.set(0, radius * 0.35, radius * 0.9);
-    personObject.add(direction);
-    personObject.position.set(person.position.x, 0, person.position.z);
-    personObject.rotation.y = person.yawRadians;
-    root.add(personObject);
-  }
-  return root;
 }
 
 function applyTransform(root: THREE.Group, transform: SessionTransform) {
