@@ -112,6 +112,10 @@ test('Better Auth and project flows run through the Nest application', async () 
     assert.equal(hidden.status, 404, 'another owner cannot read the project');
     const hiddenWrite = await fetch(`${base}/api/projects/${created.id}`, { method: 'PATCH', headers: { cookie: cookieB, origin: process.env.APP_ORIGIN, 'content-type': 'application/json' }, body: JSON.stringify({ ...input, expectedRevision: 1 }) });
     assert.equal(hiddenWrite.status, 404, 'another owner cannot update the project');
+    const hiddenDelete = await fetch(`${base}/api/projects/${created.id}`, { method: 'DELETE', headers: { cookie: cookieB, origin: process.env.APP_ORIGIN } });
+    assert.equal(hiddenDelete.status, 404, 'another owner cannot delete the project');
+    const preservedAfterHiddenDelete = await fetch(`${base}/api/projects/${created.id}`, { headers: { cookie: cookieA } });
+    assert.equal(preservedAfterHiddenDelete.status, 200, 'a rejected cross-owner delete preserves the project');
 
     const conflict = await fetch(`${base}/api/projects/${created.id}`, { method: 'PATCH', headers: { cookie: cookieA, origin: process.env.APP_ORIGIN, 'content-type': 'application/json' }, body: JSON.stringify({ ...input, expectedRevision: 7 }) });
     assert.equal(conflict.status, 409);
@@ -125,6 +129,13 @@ test('Better Auth and project flows run through the Nest application', async () 
     assert.equal(reopenedResponse.status, 200);
     const reopened = await reopenedResponse.json();
     assert.deepEqual(reopened.scene, created.scene, 'reopened scene preserves its manual geometry and measurement evidence');
+
+    const deleteResponse = await fetch(`${await app.getUrl()}/api/projects/${created.id}`, { method: 'DELETE', headers: { cookie: cookieA, origin: process.env.APP_ORIGIN } });
+    assert.equal(deleteResponse.status, 204, 'the owner can delete the project');
+    const deletedGet = await fetch(`${await app.getUrl()}/api/projects/${created.id}`, { headers: { cookie: cookieA } });
+    assert.equal(deletedGet.status, 404, 'a deleted project is no longer readable');
+    const deletedList = await fetch(`${await app.getUrl()}/api/projects`, { headers: { cookie: cookieA } });
+    assert.equal((await deletedList.json()).projects.some((project) => project.id === created.id), false, 'a deleted project no longer appears in the owner list');
   } finally {
     if (app) await app.close();
     for (const [key, value] of Object.entries(previous)) {

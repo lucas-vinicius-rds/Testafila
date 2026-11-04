@@ -1,11 +1,11 @@
 ﻿# TestaFila
 
-Editor manual e simulador 3D para planejar filas em metros, com login, projetos
-por proprietário e persistência SQLite. Aplicação atual: Next.js + NestJS.
+Editor manual e simulador 3D para planejar filas em metros, com projetos
+persistidos em SQLite. Aplicação atual: Next.js + NestJS.
 
-**O MVP WebAR ainda não está concluído.** Câmera, mapeamento por hit-test e
-realinhamento não estão integrados ao editor. O diagnóstico `/xr-check` é um
-spike experimental separado, cuja validação física continua pendente.
+O editor inclui uma rota WebAR experimental por projeto (`/projects/:id/ar`).
+O alinhamento é temporário por sessão; validação física e compatibilidade em
+aparelhos reais continuam pendentes.
 
 ## Comece aqui
 
@@ -32,9 +32,8 @@ Em outro terminal:
 npm run dev:web
 ```
 
-Acesse `http://localhost:3000`. Os comandos genéricos `npm run dev` e
-`npm run build` ainda pertencem ao protótipo Vite preservado do colega.
-Para a aplicação atual, use `dev:web`, `dev:api`, `build:web` e `build:api`.
+Acesse `http://localhost:3000`. Use `dev:web`, `dev:api`, `build:web` e
+`build:api` para executar e compilar as aplicações.
 
 Documentação detalhada está em `docs`; `AGENTS.md` permanece na raiz como
 instrução operacional dos agentes. Não versionar `.env`, SQLite ou credenciais.

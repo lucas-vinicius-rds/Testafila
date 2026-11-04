@@ -724,7 +724,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: none; box-
   gap: 6px;
   flex: 0 0 auto;
 }
-.card-open-cta, .card-edit-cta {
+.card-open-cta, .card-edit-cta, .card-delete-cta {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
@@ -732,6 +732,11 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: none; box-
   padding: 0 14px;
   font-size: 12px;
   text-decoration: none;
+}
+.card-delete-cta { color: var(--danger, #8b342a); border-color: currentColor; }
+.card-delete-cta:hover:not(:disabled) { background: #fbefed; }
+@media (max-width: 720px) {
+  .project-card-ctas { flex-wrap: wrap; }
 }
 .project-preview-svg {
   padding: 0;

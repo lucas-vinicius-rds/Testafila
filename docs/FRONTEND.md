@@ -6,8 +6,8 @@ Atualizado em 28/10/2026 após Onda 3 (Sprint 05). Este documento registra a est
 
 | Rota | Descrição |
 |---|---|
-| `/` | Formulário de autenticação e redirecionamento de sessão ativa. |
-| `/dashboard` | Galeria de projetos da conta com miniaturas SVG métricas derivadas da cena, estados de carregamento, erro, navegação de app shell e CTAs claros de **Abrir** e **Editar**. |
+| `/` | Redireciona para a galeria. |
+| `/dashboard` | Galeria compartilhada da instância, com miniaturas SVG métricas derivadas da cena, estados de carregamento, erro, navegação de app shell e CTAs claros de **Abrir**, **Editar** e **Apagar**. |
 | `/projects/new` | Criação guiada: planta métrica, revisão 3D no canvas, paleta de itens, cadeia de pessoas conectadas (+1), áreas restritas e salvamento inicial. |
 | `/projects/[id]` | Visualização de leitura da cena salva, medidas métricas consolidadas e botão de ação para edição. |
 | `/projects/[id]/edit` | Editor completo da fila carregando a revisão existente com resolução atômica de conflitos (409) e histórico. |

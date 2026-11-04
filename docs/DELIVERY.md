@@ -1,13 +1,13 @@
 ﻿# Entrega e estado atual
 
-Atualizado em 28/10/2026. Leitura principal: [passagem para o colega](PASSAGEM-COLEGA.md).
+Atualizado em 29/10/2026. Autenticação desativada nesta revisão; todos os projetos estão compartilhados pela instância. Leitura principal: [passagem para o colega](PASSAGEM-COLEGA.md).
 O histórico de decisões e bloqueios de 22/10 está em
 [historico/COORDENACAO-2026-10-22.md](historico/COORDENACAO-2026-10-22.md).
 
 ## Entregue
 
-- Fundação Next/TypeScript + Nest/SQLite, Better Auth e CLI administrativo.
-- Login real, projetos do proprietário, salvar/abrir e conflitos de revisão.
+- Fundação Next/TypeScript + Nest/SQLite.
+- Projetos compartilhados na instância, salvar/abrir/apagar e conflitos de revisão.
 - Planta manual retangular em metros e ajuste de cantos por arraste, com confirmação.
 - Paleta junto ao canvas; áreas por desenho/confirmar; postes/fitas e pessoas livres,
   rotação, +1 atrás, espaçamento e histórico. Percursos antigos continuam compatíveis.
@@ -18,14 +18,15 @@ O histórico de decisões e bloqueios de 22/10 está em
 
 ## Não entregue como produto
 
-- Captura do ambiente pela câmera e editor sobre o chão real.
-- Sessão XR integrada ao fluxo de projetos e realinhamento de cena salva.
+- Captura/levantamento completo do ambiente pela câmera e edição da planta sobre o chão real.
 - Precisão física garantida, aceite mobile físico, HTTPS/deploy final e testes SUS.
 - Certificação normativa de acessibilidade/segurança ou capacidade otimizada global.
 
-O spike experimental `/xr-check` prepara a validação de suporte e hit-test;
-seu resultado em aparelho real ainda precisa ser coletado. Não deve ser marcado
-como entrega completa de AR. Detalhes em [XR-PENDENCIAS.md](XR-PENDENCIAS.md).
+A rota experimental `/projects/:id/ar` permite alinhar uma cena salva por dois
+pontos e conferir um terceiro, sem salvar poses nem alterar a origem do projeto.
+O spike `/xr-check` continua preparando o diagnóstico de suporte e hit-test.
+Nenhum dos dois substitui validação física em aparelho. Detalhes em
+[XR-PENDENCIAS.md](XR-PENDENCIAS.md).
 
 ## Evidências e critérios
 

@@ -3,7 +3,9 @@ import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service.ts';
 import { AppError } from '../common/types.ts';
 import { validateSaveProjectInput } from './validation.ts';
-import type { SavedProject, SaveProjectInput } from '../../../../contracts/project.ts';
+import type { SavedProject } from '../../../../contracts/project.ts';
+
+const LOCAL_OWNER_ID = 'local-project-owner';
 
 export interface ProjectListItem {
   id: string;
@@ -22,14 +24,10 @@ export class ProjectsService {
     this.db = db;
   }
 
-  public listProjects(ownerId: string): { projects: ProjectListItem[] } {
-    if (!ownerId) {
-      throw new AppError(401, 'UNAUTHORIZED', 'Sessão inválida');
-    }
-
+  public listProjects(): { projects: ProjectListItem[] } {
     const rows = this.db
-      .prepare('SELECT id, name, created_at, updated_at, revision, preview_key FROM projects WHERE owner_id = ? ORDER BY updated_at DESC')
-      .all(ownerId) as Array<{
+      .prepare('SELECT id, name, created_at, updated_at, revision, preview_key FROM projects ORDER BY updated_at DESC')
+      .all() as Array<{
       id: string;
       name: string;
       created_at: string;
@@ -50,16 +48,12 @@ export class ProjectsService {
     };
   }
 
-  public getProject(id: string, ownerId: string): SavedProject {
-    if (!ownerId) {
-      throw new AppError(401, 'UNAUTHORIZED', 'Sessão inválida');
-    }
-
+  public getProject(id: string): SavedProject {
     const row = this.db
       .prepare(
-        'SELECT id, owner_id, name, created_at, updated_at, revision, scene, preview_key FROM projects WHERE id = ? AND owner_id = ?'
+        'SELECT id, owner_id, name, created_at, updated_at, revision, scene, preview_key FROM projects WHERE id = ?'
       )
-      .get(id, ownerId) as
+      .get(id) as
       | {
           id: string;
           owner_id: string;
@@ -95,11 +89,7 @@ export class ProjectsService {
     };
   }
 
-  public createProject(ownerId: string, rawInput: any): SavedProject {
-    if (!ownerId) {
-      throw new AppError(401, 'UNAUTHORIZED', 'Sessão inválida');
-    }
-
+  public createProject(rawInput: any): SavedProject {
     const validatedInput = validateSaveProjectInput(rawInput, true);
 
     const projectId = crypto.randomUUID();
@@ -113,12 +103,12 @@ export class ProjectsService {
         .prepare(
           'INSERT INTO projects (id, owner_id, name, created_at, updated_at, revision, schema_version, scene, preview_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )
-        .run(projectId, ownerId, validatedInput.name, now, now, revision, schemaVersion, sceneJson, null);
+        .run(projectId, LOCAL_OWNER_ID, validatedInput.name, now, now, revision, schemaVersion, sceneJson, null);
     });
 
     return {
       id: projectId,
-      ownerId,
+      ownerId: LOCAL_OWNER_ID,
       name: validatedInput.name,
       createdAt: now,
       updatedAt: now,
@@ -128,17 +118,13 @@ export class ProjectsService {
     };
   }
 
-  public updateProject(id: string, ownerId: string, rawInput: any): SavedProject {
-    if (!ownerId) {
-      throw new AppError(401, 'UNAUTHORIZED', 'Sessão inválida');
-    }
-
+  public updateProject(id: string, rawInput: any): SavedProject {
     const validatedInput = validateSaveProjectInput(rawInput, false);
 
     return this.db.transaction(() => {
       const current = this.db
-        .prepare('SELECT id, revision, created_at, preview_key FROM projects WHERE id = ? AND owner_id = ?')
-        .get(id, ownerId) as { id: string; revision: number; created_at: string; preview_key: string | null } | undefined;
+        .prepare('SELECT id, owner_id, revision, created_at, preview_key FROM projects WHERE id = ?')
+        .get(id) as { id: string; owner_id: string; revision: number; created_at: string; preview_key: string | null } | undefined;
 
       if (!current) {
         throw new AppError(404, 'NOT_FOUND', 'Projeto não encontrado');
@@ -154,9 +140,9 @@ export class ProjectsService {
 
       const result = this.db
         .prepare(
-          'UPDATE projects SET name = ?, scene = ?, revision = ?, updated_at = ? WHERE id = ? AND owner_id = ? AND revision = ?'
+          'UPDATE projects SET name = ?, scene = ?, revision = ?, updated_at = ? WHERE id = ? AND revision = ?'
         )
-        .run(validatedInput.name, sceneJson, nextRevision, now, id, ownerId, validatedInput.expectedRevision);
+        .run(validatedInput.name, sceneJson, nextRevision, now, id, validatedInput.expectedRevision);
 
       if (result.changes !== 1) {
         throw new AppError(409, 'CONFLICT', 'Falha ao aplicar revisão atômica no projeto');
@@ -164,7 +150,7 @@ export class ProjectsService {
 
       return {
         id,
-        ownerId,
+        ownerId: current.owner_id,
         name: validatedInput.name,
         createdAt: current.created_at,
         updatedAt: now,
@@ -173,5 +159,15 @@ export class ProjectsService {
         previewKey: current.preview_key,
       };
     });
+  }
+
+  public deleteProject(id: string): void {
+    const result = this.db
+      .prepare('DELETE FROM projects WHERE id = ?')
+      .run(id);
+
+    if (result.changes !== 1) {
+      throw new AppError(404, 'NOT_FOUND', 'Projeto não encontrado');
+    }
   }
 }

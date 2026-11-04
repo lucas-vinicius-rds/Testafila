@@ -19,46 +19,25 @@ Não sobrescreva um `.env` existente com segredos reais. Edite `apps/api/.env`:
 
 | Variável | Uso |
 | --- | --- |
-| `BETTER_AUTH_SECRET` | Obrigatória, aleatória, pelo menos 32 caracteres. |
 | `APP_ORIGIN` | Origem pública do Next; localmente `http://localhost:3000`. |
-| `BETTER_AUTH_URL` | Opcional; padrão igual a APP_ORIGIN. |
 | `DATABASE_PATH` | Opcional; executando pelo workspace, padrão `apps/api/data/testafila.sqlite`. |
 | `HOST` / `PORT` | API: `127.0.0.1` e `3001`. |
 
-Para gerar um segredo local, por exemplo:
-
-```powershell
-node -p "require('node:crypto').randomBytes(48).toString('base64url')"
-```
-
-Guarde o valor no `.env` local, não na documentação. O frontend já usa a API
+Autenticação está desativada: a aplicação não pede conta nem senha e todos os
+projetos ficam compartilhados entre os acessos à mesma instância. O frontend usa a API
 `http://127.0.0.1:3001` por padrão. Se necessário, copie `apps/web/.env.example`
 para `apps/web/.env.local` e ajuste `API_BASE_URL`, somente servidor, sem `/api` final.
 
-## Banco e primeiro login
+## Banco de dados
 
-Não há usuário/senha padrão nem signup público. Cada instalação cria sua conta:
+Crie ou atualize o banco com as migrações:
 
 ```powershell
 npm run migrate:api
-$env:ADMIN_EMAIL = Read-Host 'E-mail da conta'
-$env:ADMIN_NAME = Read-Host 'Nome da conta'
-$senhaDaConta = Read-Host 'Senha da conta (mínimo 8 caracteres)' -AsSecureString
-$env:ADMIN_PASSWORD = [System.Net.NetworkCredential]::new('', $senhaDaConta).Password
-try {
-  npm run user:create
-} finally {
-  Remove-Item Env:\ADMIN_PASSWORD -ErrorAction SilentlyContinue
-  Remove-Item Env:\ADMIN_EMAIL -ErrorAction SilentlyContinue
-  Remove-Item Env:\ADMIN_NAME -ErrorAction SilentlyContinue
-  Remove-Variable senhaDaConta -ErrorAction SilentlyContinue
-}
 ```
 
-Os scripts de migração e conta compilam a API antes de executar o código com
-decorators. Conta duplicada é rejeitada. Credenciais de QA de outra máquina não
-são portáveis: o banco local não entra no Git. Para redefinir acesso a uma conta
-real, planeje procedimento administrativo específico; não habilite signup público.
+As migrações preservam projetos antigos e permitem que a galeria compartilhada
+os apresente sem autenticação.
 
 ## Desenvolvimento
 
@@ -74,7 +53,7 @@ Terminal 2:
 npm run dev:web
 ```
 
-Acesse `http://localhost:3000` e entre com a conta criada. O Nest oferece
+Acesse `http://localhost:3000`; a galeria abre sem login. O Nest oferece
 `http://127.0.0.1:3001/api/health`. O navegador usa `/api` pelo Next.
 
 ## Build e execução compilada
@@ -117,9 +96,8 @@ rode o build antes de investigar erro por ausência de `.next/types`.
 
 ### QA automatizado do editor 3D
 
-Com Next e Nest já iniciados, defina `TEST_EMAIL` e `TEST_PASSWORD` no ambiente
-para uma conta administrativa criada localmente e execute `npm run test:editor`.
-Não grave essas credenciais no repositório. O teste cria projetos nessa conta.
+Com Next e Nest já iniciados, execute `npm run test:editor` para rodar o fluxo
+automatizado do editor. O teste cria projetos compartilhados no banco configurado.
 `TEST_BASE_URL` permite mudar a origem (padrão `http://localhost:3000`).
 
 A configuração usa Edge instalado no Windows e WebGL via SwiftShader. Em outro
@@ -129,20 +107,19 @@ mobile 390×844 e small-mobile 320×568; capturas e traces ficam em `test-result
 (ignorado pelo Git). Viewport/touch emulado não substitui aparelho físico.
 
 `localhost` no celular é o próprio celular. Um acesso pela rede local exige URL
-acessível, APP_ORIGIN/BETTER_AUTH_URL coerentes e proxy correto. Para cookies
-seguros e WebXR em dispositivo, prepare HTTPS confiável no navegador do aparelho;
+acessível e APP_ORIGIN/proxy coerentes. Para WebXR em dispositivo, prepare HTTPS
+confiável no navegador do aparelho;
 HTTP de IP local não equivale ao contexto seguro de localhost do computador.
 
 O spike `/xr-check` não deve pedir sessão AR no carregamento. Use seu botão de
 início em aparelho compatível, com acesso HTTPS; veja XR-PENDENCIAS.md.
 Não há deploy pronto ou compatibilidade universal Android/iOS comprovada.
 
-## Protótipo preservado
+## Aplicações atuais
 
-`npm run dev`, `npm run dev:legacy`, `npm run build` e `npm run preview` são do
-Vite original. Ele continua em `src/*.js`/`index.html` para consulta. Não confundir
-esse protótipo com a aplicação Next/Nest e não usar suas alegações de AR universal
-como evidência de funcionalidade entregue.
+O repositório contém o frontend Next.js em `apps/web` e a API NestJS em
+`apps/api`. O protótipo Vite legado foi removido; `src/domain/**` continua como
+código compartilhado de geometria e domínio.
 
 SQLite depende de disco persistente: produção precisa de hospedagem compatível,
 backup e segredos configurados. Um frontend em hospedagem estática não substitui

@@ -22,12 +22,14 @@ Estado do produto: editor manual/3D funcional; MVP WebAR ainda incompleto.
 | [FRONTEND.md](FRONTEND.md) | Rotas, proxy, editor e estados de erro. |
 | [DOMINIO.md](DOMINIO.md) | Geometria, comandos, capacidade e invariantes. |
 | [XR-PENDENCIAS.md](XR-PENDENCIAS.md) | Spike experimental, validação física e AR ainda faltante. |
+| [PLANO-WEBAR.md](PLANO-WEBAR.md) | Proposta futura para integrar WebAR ao editor, condicionada à validação física. |
 | [REQUISITOS-ESTADO-ATUAL.md](REQUISITOS-ESTADO-ATUAL.md) | Matriz dos PDFs e alterações posteriores autorizadas. |
 | [TESTE-MANUAL.md](TESTE-MANUAL.md) | Roteiro de aceite humano e registro de resultados. |
 | [DELIVERY.md](DELIVERY.md) | Síntese do estado de entrega. |
 
 ## Evidências datadas
 
+- [RELATORIO-MUDANCAS-2026-11-04.md](RELATORIO-MUDANCAS-2026-11-04.md): WebAR experimental, remoção do protótipo legado e verificações desta sessão.
 - [QA-LOTE-04.md](QA-LOTE-04.md): build final, três viewports, fluxo visual completo e capturas de 28/10.
 
 - [QA-LOTE-03.md](QA-LOTE-03.md): primeira rodada integrada de 22/10.

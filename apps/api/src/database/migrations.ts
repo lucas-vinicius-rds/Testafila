@@ -92,6 +92,16 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    name: '002_local_projects_owner',
+    up: (db: DatabaseService) => {
+      const now = new Date().toISOString();
+      db.prepare(`
+        INSERT OR IGNORE INTO user (id, name, email, emailVerified, role, banned, createdAt, updatedAt)
+        VALUES (?, ?, ?, 1, 'user', 0, ?, ?)
+      `).run('local-project-owner', 'Projeto local', 'local-project-owner@testafila.invalid', now, now);
+    },
+  },
 ];
 
 export function runMigrations(db: DatabaseService): void {

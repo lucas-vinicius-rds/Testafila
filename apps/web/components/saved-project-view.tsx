@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import type { SavedProject } from "../../../contracts/project.ts";
 import { validateManualEnvironment, getEnvironmentArea, getEnvironmentPerimeterLength } from "../lib/project-scene";
 import { apiFetch, readApiError } from "../lib/http";
 import { ScenePreview } from "./scene-preview";
-import type { SessionResponse } from "../lib/contracts";
 import { BrandLogo } from "./brand-logo";
 
 function formatMeters(value: number): string {
@@ -22,7 +21,6 @@ function formatDate(value: string): string {
 
 export function SavedProjectView() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
   const projectId = params.id;
   const [project, setProject] = useState<SavedProject | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,23 +31,7 @@ export function SavedProjectView() {
     setLoading(true);
     setError("");
     try {
-      const sessionResponse = await apiFetch("/api/auth/get-session");
-      if (sessionResponse.status === 401) {
-        router.replace("/");
-        return;
-      }
-      if (!sessionResponse.ok) throw new Error(await readApiError(sessionResponse, "Não foi possível verificar sua sessão."));
-      const session = (await sessionResponse.json()) as SessionResponse;
-      if (!session?.user) {
-        router.replace("/");
-        return;
-      }
-
       const response = await apiFetch(`/api/projects/${encodeURIComponent(projectId)}`);
-      if (response.status === 401) {
-        router.replace("/");
-        return;
-      }
       if (response.status === 404) {
         setError("Este projeto não existe ou não está disponível nesta conta.");
         return;
@@ -61,7 +43,7 @@ export function SavedProjectView() {
     } finally {
       setLoading(false);
     }
-  }, [projectId, router]);
+  }, [projectId]);
 
   useEffect(() => { void loadProject(); }, [loadProject]);
 
@@ -125,7 +107,8 @@ export function SavedProjectView() {
           : `${environment.measurement.checks.length} ${environment.measurement.checks.length === 1 ? "conferência de medida registrada" : "conferências de medida registradas"}.`}</p>
         <div className="saved-project-actions"><Link className="button-secondary" href="/dashboard">Voltar à galeria</Link>
           <div><Link className="button-primary" href={`/projects/${encodeURIComponent(project.id)}/edit`}>Editar fila</Link>
-            <span>O alinhamento AR ainda não faz parte desta etapa.</span></div></div>
+            <Link className="button-secondary" href={`/projects/${encodeURIComponent(project.id)}/ar`}>Abrir WebAR experimental</Link>
+            <span>Exige HTTPS, aparelho compatível e realinhamento nesta sessão.</span></div></div>
       </section>
     </main>
   );

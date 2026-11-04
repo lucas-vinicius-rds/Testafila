@@ -3,9 +3,9 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
-  UseGuards,
   HttpCode,
   HttpStatus,
   Req,
@@ -13,12 +13,8 @@ import {
 import type { Request } from 'express';
 import { AppError } from '../common/types.ts';
 import { ProjectsService } from './projects.service.ts';
-import { AuthGuard } from '../common/auth.guard.ts';
-import { CurrentUser } from '../common/current-user.decorator.ts';
-import type { AuthUser } from '../common/types.ts';
 
 @Controller('api/projects')
-@UseGuards(AuthGuard)
 export class ProjectsController {
   private readonly projectsService: ProjectsService;
 
@@ -27,31 +23,37 @@ export class ProjectsController {
   }
 
   @Get()
-  async listProjects(@CurrentUser() user: AuthUser) {
-    return this.projectsService.listProjects(user.id);
+  async listProjects() {
+    return this.projectsService.listProjects();
   }
 
   @Get(':id')
-  async getProject(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.projectsService.getProject(id, user.id);
+  async getProject(@Param('id') id: string) {
+    return this.projectsService.getProject(id);
   }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async createProject(@CurrentUser() user: AuthUser, @Body() body: any, @Req() req: Request) {
+  async createProject(@Body() body: any, @Req() req: Request) {
     this.checkOrigin(req);
-    return this.projectsService.createProject(user.id, body);
+    return this.projectsService.createProject(body);
   }
 
   @Patch(':id')
   async updateProject(
     @Param('id') id: string,
-    @CurrentUser() user: AuthUser,
     @Body() body: any,
     @Req() req: Request
   ) {
     this.checkOrigin(req);
-    return this.projectsService.updateProject(id, user.id, body);
+    return this.projectsService.updateProject(id, body);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteProject(@Param('id') id: string, @Req() req: Request) {
+    this.checkOrigin(req);
+    this.projectsService.deleteProject(id);
   }
 
   private checkOrigin(req: Request) {

@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { apiFetch, readApiError } from "../lib/http";
-import type { ProjectSummary, ProjectsResponse, SessionResponse } from "../lib/contracts";
+import type { ProjectSummary, ProjectsResponse } from "../lib/contracts";
 import type { ProjectScene } from "../../../contracts/project.ts";
 import { BrandLogo } from "./brand-logo";
 import { AppNav } from "./app-nav";
@@ -15,17 +15,14 @@ import {
   ArrowSquareOut,
   SlidersHorizontal,
   WarningCircle,
-  FolderOpen
+  FolderOpen,
+  Trash
 } from "@phosphor-icons/react/dist/ssr";
 
 function formatDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Data indisponível";
   return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).format(date);
-}
-
-function initials(name: string): string {
-  return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toLocaleUpperCase("pt-BR")).join("") || "?";
 }
 
 function ProjectThumbnail({ projectId }: { projectId: string }) {
@@ -75,16 +72,14 @@ function ProjectThumbnail({ projectId }: { projectId: string }) {
 }
 
 export function Dashboard() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const showSettingsParam = searchParams.get("settings") === "1";
 
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [userName, setUserName] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [signingOut, setSigningOut] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(showSettingsParam);
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
 
   const [gridStep, setGridStep] = useState<GridStep>(0.25);
   const [navigationMode, setNavigationMode] = useState<NavigationMode>("navigate");
@@ -99,24 +94,7 @@ export function Dashboard() {
     setLoading(true);
     setError("");
     try {
-      const sessionResponse = await apiFetch("/api/auth/get-session");
-      if (sessionResponse.status === 401) {
-        router.replace("/");
-        return;
-      }
-      if (!sessionResponse.ok) throw new Error(await readApiError(sessionResponse, "Não foi possível verificar sua sessão."));
-      const session = (await sessionResponse.json()) as SessionResponse;
-      if (!session?.user) {
-        router.replace("/");
-        return;
-      }
-      setUserName(session.user.name);
-
       const response = await apiFetch("/api/projects");
-      if (response.status === 401) {
-        router.replace("/");
-        return;
-      }
       if (!response.ok) throw new Error(await readApiError(response, "Não foi possível carregar os projetos."));
       const payload = (await response.json()) as ProjectsResponse;
       if (!Array.isArray(payload.projects)) throw new Error("A resposta de projetos está em formato inesperado.");
@@ -126,21 +104,22 @@ export function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, []);
 
   useEffect(() => { void loadProjects(); }, [loadProjects]);
 
-  async function signOut() {
-    setSigningOut(true);
+  async function deleteProject(project: ProjectSummary) {
+    if (!window.confirm(`Apagar “${project.name}”? Esta ação não pode ser desfeita.`)) return;
+    setDeletingProjectId(project.id);
     setError("");
     try {
-      const response = await apiFetch("/api/auth/sign-out", { method: "POST" });
-      if (!response.ok) throw new Error(await readApiError(response, "Não foi possível encerrar a sessão."));
-      router.replace("/");
-      router.refresh();
+      const response = await apiFetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error(await readApiError(response, "Não foi possível apagar o projeto."));
+      setProjects((current) => current.filter((item) => item.id !== project.id));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível encerrar a sessão.");
-      setSigningOut(false);
+      setError(cause instanceof Error ? cause.message : "Não foi possível apagar o projeto.");
+    } finally {
+      setDeletingProjectId(null);
     }
   }
 
@@ -162,11 +141,7 @@ export function Dashboard() {
             <SlidersHorizontal size={18} weight="bold" aria-hidden="true" />
             <span className="desktop-only-inline">Opções</span>
           </button>
-          <span className="account-avatar" aria-hidden="true">{initials(userName)}</span>
-          <span className="account-name">{userName || "Conta"}</span>
-          <button className="button-quiet" type="button" onClick={signOut} disabled={signingOut}>
-            {signingOut ? "Saindo…" : "Sair"}
-          </button>
+          <span className="account-name">Modo local</span>
         </div>
       </header>
 
@@ -253,6 +228,16 @@ export function Dashboard() {
                       <ArrowSquareOut size={16} weight="bold" aria-hidden="true" />
                       <span>Editar</span>
                     </Link>
+                    <button
+                      className="button-secondary card-delete-cta"
+                      type="button"
+                      onClick={() => void deleteProject(project)}
+                      disabled={deletingProjectId === project.id}
+                      aria-label={`Apagar projeto ${project.name}`}
+                    >
+                      <Trash size={16} weight="bold" aria-hidden="true" />
+                      <span>{deletingProjectId === project.id ? "Apagando…" : "Apagar"}</span>
+                    </button>
                   </div>
                 </div>
                 <p className="project-status"><span /> SALVO · REV. {project.revision}</p>

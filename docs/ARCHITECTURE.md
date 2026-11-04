@@ -16,26 +16,26 @@ contracts/              ProjectScene, comandos e props comuns
 src/domain/             geometria pura, medição e filas
 tests/domain/           testes do domínio, sem React/Three/banco
 docs/                   documentação canônica e evidências
-src/*.js, index.html    protótipo Vite original preservado
 ```
 
 O spike `/xr-check` é isolado em `apps/web/app/xr-check` e
 `apps/web/components/xr-check`. Ele prepara diagnóstico e validação de
-WebXR/hit-test; não transforma o editor em AR nem persiste medições.
+WebXR/hit-test. O protótipo Vite legado foi removido; `src/domain/**` permanece
+como domínio compartilhado pelo editor e pela API.
 
 ## Fluxo de dados
 
 Navegador → Next (porta 3000) → proxy `/api/**` → Nest (127.0.0.1:3001)
-→ Better Auth/serviços de projeto → SQLite.
+→ serviços de projeto → SQLite.
 
 O navegador só usa URLs de mesma origem. `API_BASE_URL` é lida pelo servidor
 Next. Cookie/Set-Cookie e Origin são preservados; headers de conexão e
 encaminhamento recebidos são filtrados. Timeout upstream: 10 s; falha: 502.
 
-Better Auth gerencia credenciais e sessões. Não há signup público ou senha fixa.
-Provisionamento usa instância administrativa de CLI e `ADMIN_PASSWORD` no ambiente.
-O Nest deriva ownerId da sessão e filtra leitura/escrita por projeto e proprietário.
-Mutações rejeitam origens não confiáveis. Segredo e banco ficam fora do Git.
+Autenticação está desativada nesta revisão. Os projetos existentes e novos são
+acessíveis a qualquer pessoa com acesso à aplicação; a galeria é compartilhada.
+Mutações rejeitam origens não confiáveis. O SQLite e segredos de serviços externos
+continuam fora do Git.
 
 ## Documento e consistência
 
@@ -68,7 +68,14 @@ são históricas. Dependências efetivas estão nos manifests e package-lock.
 
 ## XR e entrega
 
-A implementação de AR no editor, alinhamento de projeto salvo, diagnóstico em
-aparelho real, HTTPS e precisão em 20 m permanecem etapas separadas. Um spike
-ou acesso à câmera não substitui esses requisitos. Consulte
-[pendências XR](XR-PENDENCIAS.md) e [estado dos requisitos](REQUISITOS-ESTADO-ATUAL.md).
+A rota cliente `/projects/:id/ar` carrega a mesma `ProjectScene` salva e abre
+uma sessão WebXR com `hit-test` e `local-floor`. Dois vértices escolhidos pelo
+usuário calculam yaw e translação; um terceiro produz o resíduo de conferência.
+A transformação é mantida apenas na memória da sessão, com escala fixa em 1,
+e não altera dados persistidos. O spike `/xr-check` permanece como diagnóstico
+isolado de superfície e distância.
+
+Diagnóstico em aparelho real, HTTPS público, tolerâncias em 20 m e precisão
+continuam pendentes. Um teste de código ou acesso à câmera não substitui esses
+requisitos. Consulte [pendências XR](XR-PENDENCIAS.md) e
+[estado dos requisitos](REQUISITOS-ESTADO-ATUAL.md).

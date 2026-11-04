@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import type { ProjectScene, SaveProjectInput, SavedProject } from "../../../contracts/project.ts";
 import { apiFetch, readApiError } from "../lib/http";
-import type { SessionResponse } from "../lib/contracts";
 import { QueueEditor } from "./queue-editor";
 import { BrandLogo } from "./brand-logo";
 
@@ -16,33 +15,22 @@ export function SavedProjectEditor() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<ProjectScene | null>(null);
-  const latestDraft = useRef<ProjectScene | null>(null);
-  const pendingSaveAfterAuth = useRef(false);
   const [saving, setSaving] = useState(false);
-  const [authRequired, setAuthRequired] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [reloadingVersion, setReloadingVersion] = useState(false);
   const [editorGeneration, setEditorGeneration] = useState(0);
   const [notice, setNotice] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
 
   useEffect(() => {
     let active = true;
     async function load() {
       setLoading(true); setError("");
       try {
-        const sessionResponse = await apiFetch("/api/auth/get-session");
-        if (sessionResponse.status === 401) { router.replace("/"); return; }
-        if (!sessionResponse.ok) throw new Error(await readApiError(sessionResponse, "Não foi possível verificar sua sessão."));
-        const session = (await sessionResponse.json()) as SessionResponse;
-        if (!session?.user) { router.replace("/"); return; }
         const response = await apiFetch(`/api/projects/${encodeURIComponent(id)}`);
-        if (response.status === 401) { router.replace("/"); return; }
         if (response.status === 404) throw new Error("Este projeto não existe ou não está disponível nesta conta.");
         if (!response.ok) throw new Error(await readApiError(response, "Não foi possível carregar o projeto para edição."));
         const saved = (await response.json()) as SavedProject;
-        if (active) { latestDraft.current = saved.scene; setProject(saved); setDraft(saved.scene); setEmail(session.user.email); }
+        if (active) { setProject(saved); setDraft(saved.scene); }
       } catch (cause) {
         if (active) setError(cause instanceof Error ? cause.message : "Não foi possível carregar o projeto.");
       } finally { if (active) setLoading(false); }
@@ -66,12 +54,6 @@ export function SavedProjectEditor() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-      if (response.status === 401) {
-        pendingSaveAfterAuth.current = true;
-        setAuthRequired(true);
-        setError("Sua sessão expirou. Entre novamente para salvar; a edição segue aberta.");
-        return;
-      }
       if (response.status === 409) {
         setConflict(true);
         setError("Este projeto mudou desde que você abriu a edição. Suas alterações continuam neste rascunho e nada foi sobrescrito. Reabra a versão atual antes de tentar salvar novamente.");
@@ -103,45 +85,20 @@ export function SavedProjectEditor() {
     setReloadingVersion(true); setError("");
     try {
       const response = await apiFetch(`/api/projects/${encodeURIComponent(project.id)}`);
-      if (response.status === 401) {
-        setAuthRequired(true);
-        setError("Sua sessão expirou. O rascunho continua aberto. Entre novamente e então escolha recarregar a versão atual.");
-        return;
-      }
       if (!response.ok) {
         setError(await readApiError(response, "Não foi possível carregar a versão atual. Seu rascunho continua aberto."));
         return;
       }
       const current = (await response.json()) as SavedProject;
-      latestDraft.current = current.scene;
-      pendingSaveAfterAuth.current = false;
       setProject(current); setDraft(current.scene);
       setEditorGeneration((generation) => generation + 1);
-      setConflict(false); setAuthRequired(false); setNotice("A versão atual do servidor foi carregada. O rascunho anterior foi descartado.");
+      setConflict(false); setNotice("A versão atual do servidor foi carregada. O rascunho anterior foi descartado.");
     } catch {
       setError("Não foi possível conectar para recarregar. Seu rascunho continua aberto.");
     } finally { setReloadingVersion(false); }
   }
 
-  async function reauthenticate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setError("");
-    try {
-      const response = await apiFetch("/api/auth/sign-in/email", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      if (!response.ok) { setError(await readApiError(response, "Não foi possível renovar a sessão. Confira os dados.")); return; }
-      setAuthRequired(false); setPassword("");
-      if (pendingSaveAfterAuth.current) {
-        pendingSaveAfterAuth.current = false;
-        const currentDraft = latestDraft.current;
-        if (currentDraft) await saveScene(currentDraft);
-      }
-    } catch { setError("Não foi possível conectar ao serviço. A edição continua aberta."); }
-  }
-
   const handleDraftChange = useCallback((scene: ProjectScene) => {
-    latestDraft.current = scene;
     setDraft((current) => current === scene ? current : scene);
   }, []);
 
@@ -165,12 +122,6 @@ export function SavedProjectEditor() {
         <div><button className="button-quiet" type="button" onClick={() => { setError(""); setNotice("Seu rascunho foi mantido aberto. Para salvar, carregue a versão atual do servidor."); }}>Manter meu rascunho aberto</button>
           <button className="queue-danger-button" type="button" onClick={() => void reloadServerVersionAndDiscardDraft()} disabled={reloadingVersion}>{reloadingVersion ? "Carregando versão…" : "Descartar rascunho e carregar versão atual"}</button></div>
       </section>}
-      {authRequired && <form className="reauth-panel queue-reauth" onSubmit={reauthenticate}>
-        <p className="eyebrow">SESSÃO EXPIRADA</p><p>Entre novamente para salvar sem fechar esta edição.</p>
-        <label htmlFor="edit-email">E-mail</label><input id="edit-email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required />
-        <label htmlFor="edit-password">Senha</label><input id="edit-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
-        <button className="button-secondary" type="submit" disabled={saving}>Entrar e salvar</button>
-      </form>}
       <QueueEditor
         key={`${project.id}:${project.revision}:${editorGeneration}`}
         initialScene={project.scene}

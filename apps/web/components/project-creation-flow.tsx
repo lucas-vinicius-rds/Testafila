@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ProjectScene, SaveProjectInput } from "../../../contracts/project.ts";
 import { apiFetch, readApiError } from "../lib/http";
@@ -9,7 +9,6 @@ import { confirmManualEnvironment, createEmptyProjectScene, createManualRectangl
 import { QueueEditor } from "./queue-editor";
 import { ScenePreview } from "./scene-preview";
 import { BrandLogo } from "./brand-logo";
-import type { SessionResponse } from "../lib/contracts";
 
 type Stage = "measure" | "queue" | "name";
 type Dimensions = { width: number; depth: number };
@@ -34,35 +33,9 @@ export function ProjectCreationFlow() {
   const [widthInput, setWidthInput] = useState("10");
   const [depthInput, setDepthInput] = useState("8");
   const [projectName, setProjectName] = useState("");
-  const [sessionReady, setSessionReady] = useState(false);
-  const [sessionEmail, setSessionEmail] = useState("");
-  const [initialError, setInitialError] = useState("");
   const [geometryError, setGeometryError] = useState("");
   const [saveError, setSaveError] = useState("");
-  const [authRequired, setAuthRequired] = useState(false);
-  const [reauthPassword, setReauthPassword] = useState("");
-  const [authError, setAuthError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [reauthing, setReauthing] = useState(false);
-  const latestScene = useRef(scene);
-  const latestProjectName = useRef(projectName);
-  latestScene.current = scene;
-  latestProjectName.current = projectName;
-
-  useEffect(() => {
-    let active = true;
-    apiFetch("/api/auth/get-session")
-      .then(async (response) => {
-        if (response.status === 401) { router.replace("/"); return; }
-        if (!response.ok) throw new Error(await readApiError(response, "Não foi possível verificar sua sessão."));
-        const session = (await response.json()) as SessionResponse;
-        if (!session?.user) { router.replace("/"); return; }
-        if (active) setSessionEmail(session.user.email);
-      })
-      .catch((cause) => { if (active) setInitialError(cause instanceof Error ? cause.message : "Não foi possível verificar sua sessão."); })
-      .finally(() => { if (active) setSessionReady(true); });
-    return () => { active = false; };
-  }, [router]);
 
   function openCanvas() {
     const width = parseMeters(widthInput);
@@ -98,9 +71,6 @@ export function ProjectCreationFlow() {
       const response = await apiFetch("/api/projects", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
       });
-      if (response.status === 401) {
-        setAuthRequired(true); setSaveError("Sua sessão expirou. Entre novamente para salvar; a planta continua nesta tela."); return;
-      }
       if (response.status === 400) {
         setSaveError(await readApiError(response, "O servidor não aceitou a planta. Confira os itens e tente novamente.")); return;
       }
@@ -120,23 +90,6 @@ export function ProjectCreationFlow() {
       setSaveError("Não foi possível conectar ao serviço. Suas edições continuam nesta tela.");
     } finally { setSaving(false); }
   }
-
-  async function reauthenticate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setReauthing(true); setAuthError("");
-    try {
-      const response = await apiFetch("/api/auth/sign-in/email", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: sessionEmail, password: reauthPassword }),
-      });
-      if (!response.ok) { setAuthError(await readApiError(response, "Não foi possível renovar a sessão. Confira seus dados.")); return; }
-      setAuthRequired(false); setReauthPassword("");
-      await saveProject(latestScene.current, latestProjectName.current);
-    } catch { setAuthError("Não foi possível conectar ao serviço. As edições permanecem nesta tela."); }
-    finally { setReauthing(false); }
-  }
-
-  if (!sessionReady) return <main className="project-shell"><div className="flow-loading" role="status">Verificando sessão…</div></main>;
-  if (initialError) return <main className="project-shell"><div className="flow-error" role="alert">{initialError}<button className="button-secondary" type="button" onClick={() => window.location.reload()}>Tentar novamente</button></div></main>;
 
   return <main className={stage === "queue" ? "project-shell editor-viewport" : "project-shell creation-shell"}>
     <header className="project-header"><BrandLogo href="/dashboard" className="dashboard-wordmark" /><span className="project-header-label">NOVA FILA</span><Link className="button-quiet" href="/dashboard">Cancelar</Link></header>
@@ -164,13 +117,6 @@ export function ProjectCreationFlow() {
           <p>{formatMeters(getEnvironmentArea(scene.environment))} m² · planta manual · {scene.posts.length} postes · {scene.people.length} pessoas</p>
           {saveError && <p className="save-error" role="alert">{saveError}</p>}
           <button className="button-primary save-button" type="button" onClick={() => void saveProject()} disabled={saving || !projectName.trim()}>{saving ? "Salvando…" : "Salvar projeto"}</button>
-          {authRequired && <form className="reauth-panel" onSubmit={reauthenticate}>
-            <p>Sessão expirada. Entre novamente para continuar o salvamento.</p>
-            <label htmlFor="reauth-email">E-mail</label><input id="reauth-email" type="email" autoComplete="username" value={sessionEmail} onChange={(event) => setSessionEmail(event.target.value)} required />
-            <label htmlFor="reauth-password">Senha</label><input id="reauth-password" type="password" autoComplete="current-password" value={reauthPassword} onChange={(event) => setReauthPassword(event.target.value)} required />
-            {authError && <p className="save-error" role="alert">{authError}</p>}
-            <button className="button-secondary" type="submit" disabled={reauthing || saving}>{reauthing ? "Verificando…" : "Entrar e salvar"}</button>
-          </form>}
           <button className="button-quiet" type="button" onClick={() => setStage("queue")}>Voltar ao canvas</button>
         </div>
         <div className="creation-save-preview"><ScenePreview scene={scene} view="top" showWalls={false} /></div>

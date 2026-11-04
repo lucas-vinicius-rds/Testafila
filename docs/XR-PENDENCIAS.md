@@ -1,8 +1,10 @@
 # Spike WebXR — protocolo e pendências
 
-Status: implementação experimental isolada em `/xr-check`. Não é AR de produto,
-não mapeia a planta, não salva `ProjectScene` e não prova precisão. A validação física
-em aparelhos reais continua obrigatória.
+Status: `/xr-check` continua como diagnóstico isolado. A rota experimental
+`/projects/:id/ar` já renderiza a `ProjectScene` salva após alinhamento manual
+por sessão: dois vértices ajustam yaw/translação e um terceiro mostra resíduo.
+Nenhuma pose ou alinhamento é persistido, a escala permanece 1 e a validação
+física em aparelhos reais continua obrigatória.
 
 ## O que a rota verifica
 
@@ -66,14 +68,14 @@ de distância 3-4-12. Eles verificam regras puras; não simulam câmera, sessão
 hit-test do navegador, tracking físico ou renderer XR. O typecheck da aplicação também
 não substitui teste em aparelho.
 
-## Próxima etapa: integração e realinhamento
+## Próxima etapa: validação do alinhamento integrado
 
-Depois de preencher a matriz física, definir tolerâncias com base nos resultados e
-revisar o filtro de horizontalidade, o próximo trabalho é um adaptador de alinhamento
-isolado por sessão. Ele deverá relacionar dois pontos correspondentes distintos da
-planta para estimar translação e yaw, usar um terceiro ponto independente como
-conferência e exibir resíduos/diferenças em metros e porcentagem. Não escalar a planta
-para compensar discrepâncias. A cada sessão nova, exigir realinhamento; não persistir
-transformação ou coordenadas XR no projeto sem uma ação explícita de revisão.
+A rota `/projects/:id/ar` implementa o adaptador isolado por sessão: relaciona
+dois vértices da planta com pontos hit-test para estimar translação e yaw, usa um
+terceiro para mostrar resíduo e não altera escala. A cada sessão, o alinhamento
+recomeça e nenhuma transformação ou coordenada XR é persistida.
 
-Até essa validação e integração, a rota serve apenas para preparar e registrar o spike.
+Depois de preencher a matriz física, revisar o filtro de horizontalidade e definir
+tolerâncias baseadas nos resultados, testar o fluxo em aparelhos-alvo: seleção dos
+pontos, perda de tracking, background, fim de sessão e rotação/reinício da cena.
+Até essa validação, a rota integrada e o spike são experimentais.
