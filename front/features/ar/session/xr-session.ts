@@ -231,7 +231,10 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
 
       setTracking('searching');
       options.onActive?.();
-      runtime.renderer.setAnimationLoop((_time, frame) => renderFrame(session, frame));
+      runtime.renderer.setAnimationLoop((_time, frame) => {
+        if (!frame) return;
+        renderFrame(session, frame);
+      });
     } catch (cause) {
       if (activeSession) finishSession(activeSession, true);
       throw cause;

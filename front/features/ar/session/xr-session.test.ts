@@ -62,11 +62,33 @@ function createHarness(overrides: Partial<XrSessionOptions> & { overlayNegotiate
   return {
     calls, controller, frame, listeners, reticle, session, tracking, world,
     tick() { calls.length = 0; loop?.(0, frame); return [...calls]; },
+    tickWithoutFrame() { calls.length = 0; if (loop) Reflect.apply(loop, undefined, [0]); return [...calls]; },
     setVisibility(state: XRVisibilityState) { session.visibilityState = state; listeners.get('visibilitychange')?.(); },
   };
 }
 
 const START_ORDER = ['request', 'add:end', 'add:visibilitychange', 'add:select', 'space:viewer', 'hit-source', 'set-session', 'floor-space', 'active', 'loop:on'];
+
+test('animation callback without an XR frame is a no-op and preserves session call order', async () => {
+  for (const variant of ['project', 'check'] as const) {
+    const hits: unknown[] = [];
+    const harness = createHarness({ variant, onFrame: (hit) => hits.push(hit) });
+    await harness.controller.start();
+    assert.deepEqual(harness.calls, START_ORDER);
+    assert.deepEqual(harness.tick(), ['reticle', 'render']);
+    const snapshot = {
+      hit: harness.controller.currentHit(), reticle: harness.reticle.visible,
+      tracking: [...harness.tracking], hits: [...hits], visible: harness.controller.isVisible(),
+    };
+    assert.doesNotThrow(() => assert.deepEqual(harness.tickWithoutFrame(), []));
+    assert.deepEqual({
+      hit: harness.controller.currentHit(), reticle: harness.reticle.visible,
+      tracking: [...harness.tracking], hits: [...hits], visible: harness.controller.isVisible(),
+    }, snapshot);
+    assert.deepEqual(harness.tick(), ['reticle', 'render']);
+    assert.equal(hits.length, 2, 'only real XR frames reach onFrame');
+  }
+});
 
 test('start keeps the order recorded from the routes before the extraction', async () => {
   for (const variant of ['project', 'check'] as const) {
