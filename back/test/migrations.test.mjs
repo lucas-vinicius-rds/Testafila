@@ -24,8 +24,10 @@ test('Database Migrations', async (t) => {
 
     // Verify migrations tracking
     const migrations = db.prepare('SELECT name FROM _migrations').all();
-    assert.equal(migrations.length, 1);
-    assert.equal(migrations[0].name, '001_initial_auth_and_projects');
+    assert.deepEqual(migrations.map((migration) => migration.name).sort(), [
+      '001_initial_auth_and_projects',
+      '002_local_projects_owner',
+    ]);
 
     // Verify idempotency
     runMigrations(db);

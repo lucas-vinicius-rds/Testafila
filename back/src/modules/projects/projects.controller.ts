@@ -13,6 +13,7 @@ import {
 import type { Request } from 'express';
 import { AppError } from '../../common/types.ts';
 import { ProjectsService } from './projects.service.ts';
+import { getAppOrigins } from '../../common/app-origins.ts';
 
 @Controller('api/projects')
 export class ProjectsController {
@@ -58,7 +59,7 @@ export class ProjectsController {
 
   private checkOrigin(req: Request) {
     const origin = req.headers.origin;
-    if (origin !== (process.env.APP_ORIGIN ?? 'http://localhost:3000')) {
+    if (!origin || !getAppOrigins().includes(origin)) {
       throw new AppError(403, 'FORBIDDEN', 'Origem da requisição não permitida');
     }
   }

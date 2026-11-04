@@ -6,30 +6,18 @@ import path from 'node:path';
 
 test('Nest persists valid queue commands and rejects altered geometry', async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'testafila-queue-'));
-  const previous = Object.fromEntries(['DATABASE_PATH', 'APP_ORIGIN', 'BETTER_AUTH_URL', 'BETTER_AUTH_SECRET'].map((key) => [key, process.env[key]]));
+  const previous = Object.fromEntries(['DATABASE_PATH', 'APP_ORIGIN'].map((key) => [key, process.env[key]]));
   process.env.DATABASE_PATH = path.join(tempDir, 'queue.sqlite');
   process.env.APP_ORIGIN = 'http://localhost:3000';
-  process.env.BETTER_AUTH_URL = process.env.APP_ORIGIN;
-  process.env.BETTER_AUTH_SECRET = 'queue-integration-only-' + crypto.randomUUID();
   const { NestFactory } = await import('@nestjs/core');
   const { AppModule } = await import('../dist/src/app.module.js');
-  const { DatabaseService } = await import('../dist/src/infra/database/database.service.js');
-  const { createAuth } = await import('../dist/src/modules/auth/auth.service.js');
   const { applyQueueCommand } = await import('../dist/core/domain/queue/index.js');
   let app;
   try {
     app = await NestFactory.create(AppModule, { logger: false });
     await app.listen(0, '127.0.0.1');
     const base = await app.getUrl();
-    const email = `queue-${crypto.randomUUID()}@test.invalid`;
-    const password = crypto.randomUUID() + '-Aa9!';
-    await createAuth(app.get(DatabaseService), { allowProvisioning: true }).api.signUpEmail({ body: { email, password, name: 'Queue integration' } });
-    const login = await fetch(`${base}/api/auth/sign-in/email`, {
-      method: 'POST', headers: { origin: process.env.APP_ORIGIN, 'content-type': 'application/json' }, body: JSON.stringify({ email, password }),
-    });
-    assert.equal(login.status, 200);
-    const cookie = login.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ');
-    const headers = { cookie, origin: process.env.APP_ORIGIN, 'content-type': 'application/json' };
+    const headers = { origin: process.env.APP_ORIGIN, 'content-type': 'application/json' };
     const now = new Date().toISOString();
     let scene = {
       schemaVersion: 1, units: 'meters', coordinateSystem: 'right-handed-y-up-xz-floor',
@@ -91,7 +79,7 @@ test('Nest persists valid queue commands and rejects altered geometry', async ()
       });
       assert.equal(response.status, 400, await response.text());
     }
-    const afterInvalid = await fetch(`${base}/api/projects/${created.id}`, { headers: { cookie } });
+    const afterInvalid = await fetch(`${base}/api/projects/${created.id}`, {});
     const unchanged = await afterInvalid.json();
     assert.equal(unchanged.revision, 1, 'invalid edits must not change the database revision');
     assert.deepEqual(unchanged.scene, scene);
@@ -145,12 +133,12 @@ test('Nest persists valid queue commands and rejects altered geometry', async ()
     await app.close();
     app = await NestFactory.create(AppModule, { logger: false });
     await app.listen(0, '127.0.0.1');
-    const reopenedResponse = await fetch(`${await app.getUrl()}/api/projects/${created.id}`, { headers: { cookie } });
+    const reopenedResponse = await fetch(`${await app.getUrl()}/api/projects/${created.id}`, {});
     assert.equal(reopenedResponse.status, 200);
     const reopened = await reopenedResponse.json();
     assert.equal(reopened.revision, 2);
     assert.deepEqual(reopened.scene, redistributed.scene, 'all queue entities survive a Nest restart');
-    const reopenedFreeResponse = await fetch(`${await app.getUrl()}/api/projects/${freeProject.id}`, { headers: { cookie } });
+    const reopenedFreeResponse = await fetch(`${await app.getUrl()}/api/projects/${freeProject.id}`, {});
     assert.equal(reopenedFreeResponse.status, 200);
     const reopenedFree = await reopenedFreeResponse.json();
     assert.equal(reopenedFree.revision, 2);
