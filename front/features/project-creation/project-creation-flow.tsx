@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ProjectScene, SaveProjectInput } from "@testafila/core/contracts/project";
 import { apiFetch, readApiError } from "../../shared/http";
@@ -41,6 +41,16 @@ export function ProjectCreationFlow() {
   const [saving, setSaving] = useState(false);
   const { status: arStatus } = useArCapability();
   const cameraAvailable = arStatus === "supported";
+  const [saved, setSaved] = useState(false);
+  // A montagem guarda o trabalho só em memória, então a etapa da câmera conta como não salva.
+  const unsavedWork = !saved && (stage === "camera" || editorMounted);
+
+  useEffect(() => {
+    if (!unsavedWork) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [unsavedWork]);
 
   function openCanvas() {
     const width = parseMeters(widthInput);
@@ -96,9 +106,10 @@ export function ProjectCreationFlow() {
       if (!response.ok) {
         setSaveError(await readApiError(response, "Não foi possível salvar agora. Suas edições continuam nesta tela.")); return;
       }
-      const saved = (await response.json()) as { id?: string };
-      if (!saved.id) { setSaveError("O servidor confirmou a gravação sem retornar o identificador do projeto."); return; }
-      router.push(`/projects/${encodeURIComponent(saved.id)}`);
+      const created = (await response.json()) as { id?: string };
+      if (!created.id) { setSaveError("O servidor confirmou a gravação sem retornar o identificador do projeto."); return; }
+      setSaved(true);
+      router.push(`/projects/${encodeURIComponent(created.id)}`);
     } catch {
       setSaveError("Não foi possível conectar ao serviço. Suas edições continuam nesta tela.");
     } finally { setSaving(false); }
