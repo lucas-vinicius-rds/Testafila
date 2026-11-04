@@ -9,7 +9,7 @@ import { apiFetch, readApiError } from '../../../shared/http.ts';
 import type { ArCapabilityState } from '../session/use-ar-capability.ts';
 import { useArCapability } from '../session/use-ar-capability.ts';
 import { createXrSessionController, preventXrSelectOn, type XrTracking } from '../session/xr-session.ts';
-import { alignFromCorrespondences, type AlignmentResult, type Correspondence, type SessionTransform } from './xr-project-logic.ts';
+import { alignFromCorrespondences, projectRootPose, withManualRotation, type AlignmentResult, type Correspondence, type SessionTransform } from './xr-project-logic.ts';
 import styles from './xr-project.module.css';
 
 type Runtime = {
@@ -128,8 +128,9 @@ function buildProjectObject(project: ProjectScene): THREE.Group {
 }
 
 function applyTransform(root: THREE.Group, transform: SessionTransform) {
-  root.rotation.set(0, transform.yawRadians, 0);
-  root.position.set(transform.translation.x, transform.translation.y + 0.012, transform.translation.z);
+  const { position, rotationY } = projectRootPose(transform);
+  root.rotation.set(0, rotationY, 0);
+  root.position.set(position.x, position.y + 0.012, position.z);
 }
 
 export function XrProjectClient() {
@@ -252,7 +253,7 @@ export function XrProjectClient() {
   const rotate = useCallback((delta: number) => {
     const runtime = runtimeRef.current; if (!runtime || !alignment || !confirmed) return;
     rotationAdjustmentRef.current += delta;
-    applyTransform(runtime.projectRoot, { ...alignment.transform, yawRadians: alignment.transform.yawRadians + rotationAdjustmentRef.current });
+    applyTransform(runtime.projectRoot, withManualRotation(alignment.transform, rotationAdjustmentRef.current));
   }, [alignment, confirmed]);
 
   if (loadError) return <main className={styles.page}><p className={styles.error}>{loadError}</p><Link href="/dashboard">Voltar aos projetos</Link></main>;

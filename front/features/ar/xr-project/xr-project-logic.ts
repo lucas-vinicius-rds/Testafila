@@ -73,3 +73,16 @@ export function alignFromCorrespondences(correspondences: readonly Correspondenc
     fitDimensionErrorPercent: Math.abs(observedFitDistanceMeters - fitDistanceMeters) / fitDistanceMeters * 100,
   };
 }
+
+/**
+ * Pose for the THREE.Group that holds the project. `transformProjectPoint` turns
+ * +X toward +Z for a positive yaw, while Three's `rotation.y` turns the other way.
+ */
+export function projectRootPose(transform: SessionTransform) {
+  return { position: transform.translation, rotationY: -transform.yawRadians };
+}
+
+/** A positive manual turn follows Three's `rotation.y`, as the rotate buttons always did. */
+export function withManualRotation(transform: SessionTransform, radians: number): SessionTransform {
+  return { ...transform, yawRadians: transform.yawRadians - radians };
+}
