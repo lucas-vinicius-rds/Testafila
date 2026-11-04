@@ -6,12 +6,12 @@ import { useParams } from 'next/navigation';
 import * as THREE from 'three';
 import type { PointXZ, ProjectScene, SavedProject } from '@testafila/core/contracts/project';
 import { apiFetch, readApiError } from '../../../shared/http.ts';
-import { horizontalHitPoint } from '../xr-check/xr-check-logic.ts';
-import { alignFromCorrespondences, type AlignmentResult, type Correspondence, type SessionTransform, type XrPoint } from './xr-project-logic.ts';
+import type { ArCapabilityState } from '../session/use-ar-capability.ts';
+import { useArCapability } from '../session/use-ar-capability.ts';
+import { createXrSessionController, preventXrSelectOn, type XrTracking } from '../session/xr-session.ts';
+import { alignFromCorrespondences, type AlignmentResult, type Correspondence, type SessionTransform } from './xr-project-logic.ts';
 import styles from './xr-project.module.css';
 
-type Capability = 'checking' | 'supported' | 'unsupported' | 'insecure' | 'error';
-type Tracking = 'inactive' | 'searching' | 'surface' | 'lost' | 'hidden';
 type Runtime = {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
@@ -21,6 +21,17 @@ type Runtime = {
 };
 
 const projectColors = { floor: 0xf8f6ef, line: 0x214b40, wall: 0xd8dcd4, area: 0xb6c8bc, belt: 0x355b48, person: 0x606963 };
+
+function capabilityCopy({ status, reason }: ArCapabilityState): string {
+  switch (status) {
+    case 'checking': return 'Verificando contexto seguro e suporte a immersive-ar…';
+    case 'supported': return 'immersive-ar disponível; hit-test será confirmado ao iniciar.';
+    case 'unsupported': return 'Este aparelho não anunciou suporte a immersive-ar.';
+    case 'no-webxr': return 'Este navegador não expõe WebXR. A câmera comum não substitui a sessão AR.';
+    case 'insecure': return 'WebXR exige HTTPS ou localhost em contexto seguro.';
+    case 'error': return reason ?? 'Falha ao consultar WebXR.';
+  }
+}
 
 function errorMessage(error: unknown): string {
   if (error instanceof DOMException) {
@@ -126,10 +137,7 @@ export function XrProjectClient() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const runtimeRef = useRef<Runtime | null>(null);
-  const sessionRef = useRef<XRSession | null>(null);
-  const hitTestRef = useRef<XRHitTestSource | null>(null);
-  const floorSpaceRef = useRef<XRReferenceSpace | null>(null);
-  const latestHitRef = useRef<XrPoint | null>(null);
+  const selectHandlerRef = useRef<() => void>(() => undefined);
   const correspondencesRef = useRef<Correspondence[]>([]);
   const selectedPointRef = useRef<PointXZ | null>(null);
   const rotationAdjustmentRef = useRef(0);
@@ -137,17 +145,30 @@ export function XrProjectClient() {
 
   const [project, setProject] = useState<SavedProject | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [capability, setCapability] = useState<Capability>('checking');
-  const [capabilityMessage, setCapabilityMessage] = useState('Verificando contexto seguro e suporte a immersive-ar…');
+  const capabilityState = useArCapability();
+  const capability = capabilityState.status;
+  const capabilityMessage = capabilityCopy(capabilityState);
   const [rendererReady, setRendererReady] = useState(false);
   const [sessionActive, setSessionActive] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [tracking, setTracking] = useState<Tracking>('inactive');
+  const [tracking, setTracking] = useState<XrTracking>('inactive');
   const [correspondences, setCorrespondences] = useState<Correspondence[]>([]);
   const [selectedPointIndex, setSelectedPointIndex] = useState(0);
   const [alignment, setAlignment] = useState<AlignmentResult | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [xrSession] = useState(() => createXrSessionController({
+    getXr: () => navigator.xr,
+    getRuntime: () => runtimeRef.current,
+    getOverlayRoot: () => overlayRef.current,
+    onTrackingChange: setTracking,
+    onActive: () => setSessionActive(true),
+    onFinished: () => {
+      if (runtimeRef.current) runtimeRef.current.projectRoot.visible = false;
+      setSessionActive(false); setConfirmed(false); setAlignment(null); setCorrespondences([]); correspondencesRef.current = [];
+    },
+    onSelect: () => selectHandlerRef.current(),
+  }));
 
   const candidates = useMemo(() => project?.scene.environment.perimeter ?? [], [project]);
   const selectedPoint = candidates[selectedPointIndex] ?? null;
@@ -170,36 +191,9 @@ export function XrProjectClient() {
   }, [projectId]);
 
   useEffect(() => {
-    if (!window.isSecureContext) {
-      setCapability('insecure'); setCapabilityMessage('WebXR exige HTTPS ou localhost em contexto seguro.'); return;
-    }
-    if (!navigator.xr) {
-      setCapability('unsupported'); setCapabilityMessage('Este navegador não expõe WebXR. A câmera comum não substitui a sessão AR.'); return;
-    }
-    let cancelled = false;
-    void navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-      if (!cancelled) { setCapability(supported ? 'supported' : 'unsupported'); setCapabilityMessage(supported ? 'immersive-ar disponível; hit-test será confirmado ao iniciar.' : 'Este aparelho não anunciou suporte a immersive-ar.'); }
-    }).catch((cause: unknown) => { if (!cancelled) { setCapability('error'); setCapabilityMessage(cause instanceof Error ? cause.message : 'Falha ao consultar WebXR.'); } });
-    return () => { cancelled = true; };
-  }, []);
-
-  const endSession = useCallback((requestEnd: boolean) => {
-    const session = sessionRef.current;
-    if (!session) return;
-    hitTestRef.current?.cancel(); hitTestRef.current = null; floorSpaceRef.current = null; latestHitRef.current = null;
-    sessionRef.current = null;
-    const runtime = runtimeRef.current;
-    if (runtime) { runtime.renderer.setAnimationLoop(null); runtime.reticle.visible = false; runtime.projectRoot.visible = false; }
-    setSessionActive(false); setTracking('inactive'); setConfirmed(false); setAlignment(null); setCorrespondences([]); correspondencesRef.current = [];
-    if (requestEnd) void session.end().catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
     const overlay = overlayRef.current;
     if (!overlay) return;
-    const prevent = (event: Event) => event.preventDefault();
-    overlay.addEventListener('beforexrselect', prevent);
-    return () => overlay.removeEventListener('beforexrselect', prevent);
+    return preventXrSelectOn(overlay);
   }, []);
 
   useEffect(() => {
@@ -217,8 +211,8 @@ export function XrProjectClient() {
     const runtime = { renderer, scene, camera, reticle, projectRoot }; runtimeRef.current = runtime;
     const resize = () => { if (renderer.xr.isPresenting) return; const width = Math.max(canvas.clientWidth, 1); const height = Math.max(canvas.clientHeight, 1); renderer.setSize(width, height, false); camera.aspect = width / height; camera.updateProjectionMatrix(); renderer.render(scene, camera); };
     resize(); window.addEventListener('resize', resize); setRendererReady(true);
-    return () => { aliveRef.current = false; window.removeEventListener('resize', resize); endSession(true); runtimeRef.current = null; disposeObject(projectRoot); reticle.geometry.dispose(); reticle.material.dispose(); renderer.dispose(); };
-  }, [endSession, project]);
+    return () => { aliveRef.current = false; window.removeEventListener('resize', resize); xrSession.finish(true); runtimeRef.current = null; disposeObject(projectRoot); reticle.geometry.dispose(); reticle.material.dispose(); renderer.dispose(); };
+  }, [project, xrSession]);
 
   const resetAlignment = useCallback(() => {
     correspondencesRef.current = []; rotationAdjustmentRef.current = 0; setCorrespondences([]); setAlignment(null); setConfirmed(false);
@@ -226,8 +220,8 @@ export function XrProjectClient() {
   }, []);
 
   const collectCurrentHit = useCallback(() => {
-    const runtime = runtimeRef.current; const session = sessionRef.current; const projectPoint = selectedPointRef.current; const hit = latestHitRef.current;
-    if (!runtime || !session || session.visibilityState !== 'visible' || !projectPoint || !hit || correspondencesRef.current.length >= 3) return;
+    const runtime = runtimeRef.current; const projectPoint = selectedPointRef.current; const hit = xrSession.currentHit();
+    if (!runtime || !xrSession.isVisible() || !projectPoint || !hit || correspondencesRef.current.length >= 3) return;
     if (correspondencesRef.current.some(({ project: existing }) => existing.x === projectPoint.x && existing.z === projectPoint.z)) { setError('Escolha outro ponto da planta antes de registrar uma nova correspondência.'); return; }
     const next = [...correspondencesRef.current, { project: projectPoint, session: hit }];
     correspondencesRef.current = next; setCorrespondences(next); setError(null);
@@ -237,43 +231,17 @@ export function XrProjectClient() {
     if (nextAlignment && next.length === 2) {
       applyTransform(runtime.projectRoot, nextAlignment.transform);
     }
-  }, [candidates]);
+  }, [candidates, xrSession]);
+
+  useEffect(() => { selectHandlerRef.current = collectCurrentHit; }, [collectCurrentHit]);
 
   const startSession = useCallback(async () => {
     if (!window.isSecureContext || !navigator.xr || capability !== 'supported' || !runtimeRef.current || !rendererReady) { setError('A sessão não está pronta. Confirme HTTPS, suporte immersive-ar e WebGL.'); return; }
     setStarting(true); setError(null); resetAlignment();
-    try {
-      const options: XRSessionInit = { requiredFeatures: ['hit-test', 'local-floor'] };
-      if (overlayRef.current) { options.optionalFeatures = ['dom-overlay']; options.domOverlay = { root: overlayRef.current }; }
-      const session = await navigator.xr.requestSession('immersive-ar', options);
-      sessionRef.current = session;
-      const onEnd = () => endSession(false);
-      const onVisibility = () => { if (session.visibilityState !== 'visible') { latestHitRef.current = null; if (runtimeRef.current) runtimeRef.current.reticle.visible = false; setTracking('hidden'); } else setTracking('searching'); };
-      const onSelect = () => collectCurrentHit();
-      session.addEventListener('end', onEnd); session.addEventListener('visibilitychange', onVisibility); session.addEventListener('select', onSelect);
-      const viewer = await session.requestReferenceSpace('viewer');
-      const requestHitTestSource = session.requestHitTestSource;
-      if (!requestHitTestSource) throw new Error('O navegador não implementa requestHitTestSource.');
-      const source = await requestHitTestSource.call(session, { space: viewer });
-      if (!source) throw new Error('O navegador não retornou uma fonte de hit-test.');
-      hitTestRef.current = source;
-      const runtime = runtimeRef.current; if (!runtime) throw new Error('Renderizador não está disponível.');
-      await runtime.renderer.xr.setSession(session);
-      const floorSpace = runtime.renderer.xr.getReferenceSpace(); if (!floorSpace) throw new Error('O navegador não forneceu o espaço local do piso.'); floorSpaceRef.current = floorSpace;
-      setTracking('searching'); setSessionActive(true);
-      runtime.renderer.setAnimationLoop((_time, frame) => {
-        if (!sessionRef.current || !floorSpaceRef.current || !hitTestRef.current || session.visibilityState !== 'visible') return;
-        const viewerPose = frame.getViewerPose(floorSpaceRef.current);
-        if (!viewerPose) { latestHitRef.current = null; runtime.reticle.visible = false; setTracking('lost'); runtime.renderer.render(runtime.scene, runtime.camera); return; }
-        let hit: XrPoint | null = null;
-        for (const result of frame.getHitTestResults(hitTestRef.current)) { hit = horizontalHitPoint(result.getPose(floorSpaceRef.current)); if (hit) break; }
-        latestHitRef.current = hit; runtime.reticle.visible = Boolean(hit);
-        if (hit) { runtime.reticle.position.set(hit.x, hit.y + 0.008, hit.z); setTracking('surface'); } else setTracking('searching');
-        runtime.renderer.render(runtime.scene, runtime.camera);
-      });
-    } catch (cause) { endSession(true); if (aliveRef.current) setError(errorMessage(cause)); }
+    try { await xrSession.start(); }
+    catch (cause) { if (aliveRef.current) setError(errorMessage(cause)); }
     finally { if (aliveRef.current) setStarting(false); }
-  }, [capability, collectCurrentHit, endSession, rendererReady, resetAlignment]);
+  }, [capability, rendererReady, resetAlignment, xrSession]);
 
   const confirmAlignment = useCallback(() => {
     const runtime = runtimeRef.current;
@@ -306,7 +274,7 @@ export function XrProjectClient() {
           {alignment && <section><h2>Conferência métrica</h2><p className={styles.metric}>Erro entre os dois pontos de ajuste: {alignment.fitDimensionErrorPercent.toFixed(2)}%</p>{correspondences.length >= 3 && <p className={styles.metric}>Resíduo máximo com o terceiro ponto: {alignment.maxResidualMeters.toFixed(2)} m</p>}<p className={styles.muted}>Os valores são observados nesta sessão. Nenhuma tolerância física foi validada ainda.</p></section>}
           {correspondences.length >= 3 && !confirmed && <button type="button" className={styles.primary} onClick={confirmAlignment}>Confirmar visualização</button>}
           {confirmed && <section className={styles.actions}><h2>Ajuste temporário</h2><button type="button" className={styles.secondary} onClick={() => rotate(-Math.PI / 36)}>Girar −5°</button><button type="button" className={styles.secondary} onClick={() => rotate(Math.PI / 36)}>Girar +5°</button></section>}
-          <button type="button" className={styles.secondary} onClick={resetAlignment}>Reiniciar alinhamento</button><button type="button" className={styles.secondary} onClick={() => endSession(true)}>Encerrar sessão</button>
+          <button type="button" className={styles.secondary} onClick={resetAlignment}>Reiniciar alinhamento</button><button type="button" className={styles.secondary} onClick={() => xrSession.finish(true)}>Encerrar sessão</button>
         </>}
         <p className={styles.caution}>Use HTTPS e aparelho compatível. A visualização é experimental e não substitui medição com trena ou validação física.</p>{error && <p className={styles.error} role="alert">{error}</p>}
       </div>
