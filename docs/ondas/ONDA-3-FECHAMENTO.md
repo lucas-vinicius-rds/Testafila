@@ -1,5 +1,9 @@
 # Onda 3 — Integração, documentação e entrega para teste
 
+**Mudança de dono:** a pedido do usuário, para poupar o limite do Claude, o Codex assume a
+Frente A no lugar da Viga, além da Frente B. Agora: Frente B e itens 2 e 3 da Frente A. Itens
+1, 4, 5, 6 e 7 só depois da ordem do coordenador. `next build` passa a ser do Codex.
+
 ## Frente A — Viga: integração
 
 **Escopo:** qualquer arquivo necessário para integrar. Correção de bug de outro dono deve

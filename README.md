@@ -1,39 +1,28 @@
-﻿# TestaFila
+# TestaFila
 
-Editor manual e simulador 3D para planejar filas em metros, com projetos
-persistidos em SQLite. Aplicação atual: Next.js + NestJS.
+Aplicação de planejamento de filas: Next.js em `front/`, NestJS em `back/` e
+contratos/geometria em `back/core/`. SQLite mantém os projetos. Login está
+inativo e a galeria é compartilhada por quem acessa a instância.
 
-O editor inclui uma rota WebAR experimental por projeto (`/projects/:id/ar`).
-O alinhamento é temporário por sessão; validação física e compatibilidade em
-aparelhos reais continuam pendentes.
+A branch `ondas/camera-e-arquitetura` implementa cena v2 com pessoas interligadas,
+editor 3D e montagem experimental pela câmera em aparelhos com `immersive-ar`.
+No iPhone 11, o fluxo previsto é web com medidas digitadas e editor 3D.
+Não há app iOS nativo, Capacitor, ARKit ou App Clip.
 
-## Comece aqui
-
-- [Documentação e índice](docs/README.md)
-- [Relatório para o colega](docs/PASSAGEM-COLEGA.md)
-- [Instalar, configurar, criar login e executar](docs/EXECUCAO-LOCAL.md)
-- [O que falta e diferença em relação aos PDFs](docs/REQUISITOS-ESTADO-ATUAL.md)
-
-Não há conta ou senha fixa no código. Cada instalação cria uma conta pelo CLI.
-
-## Comandos
-
-Na raiz deste repositório, depois de seguir a configuração de ambiente:
+Consulte [documentação](docs/README.md), [execução local](docs/EXECUCAO-LOCAL.md)
+e [estado da integração](docs/ondas/status/ONDA-3.md). O código da branch e os
+serviços publicados podem estar em versões diferentes durante a integração;
+publicação/reinício dependem da ordem do coordenador.
 
 ```powershell
 npm ci
-npm run migrate:api
-npm run dev:api
+npm run dev:back
+npm run dev:front
 ```
 
-Em outro terminal:
+Veja a alternativa de execução local para o problema de `node --run` com o
+caminho Windows acentuado. Não sobrescreva `.env`, não apague `back/data/` e não
+reconstrua o `.next` que estiver sendo servido. Não há mais aplicação Vite.
 
-```powershell
-npm run dev:web
-```
-
-Acesse `http://localhost:3000`. Use `dev:web`, `dev:api`, `build:web` e
-`build:api` para executar e compilar as aplicações.
-
-Documentação detalhada está em `docs`; `AGENTS.md` permanece na raiz como
-instrução operacional dos agentes. Não versionar `.env`, SQLite ou credenciais.
+Uma unidade equivale a um metro. Câmera/AR são experimentais: precisão, tracking,
+gestos e desempenho no aparelho precisam do [aceite humano](docs/TESTE-MANUAL.md).

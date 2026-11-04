@@ -1,3 +1,5 @@
+> Registro histórico, anterior ao fechamento da Onda 3 (04/11/2026). Caminhos, login, pessoas livres e limites XR descritos abaixo podem estar superados. Consulte [índice atual](README.md) e [status da Onda 3](ondas/status/ONDA-3.md); este documento não prova o estado publicado.
+
 # Status Onda 1: Base e Contratos Prontos (Cedro)
 
 Data de congelamento: 2026-10-28

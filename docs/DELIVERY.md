@@ -1,41 +1,33 @@
-﻿# Entrega e estado atual
+﻿# Entrega e estado atual — 04/11/2026
 
-Atualizado em 29/10/2026. Autenticação desativada nesta revisão; todos os projetos estão compartilhados pela instância. Leitura principal: [passagem para o colega](PASSAGEM-COLEGA.md).
-O histórico de decisões e bloqueios de 22/10 está em
-[historico/COORDENACAO-2026-10-22.md](historico/COORDENACAO-2026-10-22.md).
+Fonte atual: branch `ondas/camera-e-arquitetura`. Consulte o marcador
+[Onda 3](ondas/status/ONDA-3.md) antes de assumir que este código já está publicado.
+O bundle e a API antigos só podem ser substituídos juntos, após validação completa.
 
-## Entregue
+## Implementado no código
 
-- Fundação Next/TypeScript + Nest/SQLite.
-- Projetos compartilhados na instância, salvar/abrir/apagar e conflitos de revisão.
-- Planta manual retangular em metros e ajuste de cantos por arraste, com confirmação.
-- Paleta junto ao canvas; áreas por desenho/confirmar; postes/fitas e pessoas livres,
-  rotação, +1 atrás, espaçamento e histórico. Percursos antigos continuam compatíveis.
-- Barra de câmera, logo original e bandeja mobile; ver [SPRINT-04.md](SPRINT-04.md).
-- Seleção/arraste, cancelamento e retomada de sessão sem perder o último rascunho.
-- Proxy, limite de tamanho e validação geométrica comum ao cliente e servidor.
-- Documentação centralizada, PDFs de referência e relatórios de QA datados.
+- Next em front, Nest em back/src, SQLite e domínio puro em back/core.
+- Galeria compartilhada sem login, persistência real, revisão otimista e conflitos.
+- Cena v2 com cadeia de pessoas, espaçamento, direção, +1 e conversão explícita
+  de legados. Abrir v1 migra em memória sem regravar sua linha.
+- Editor 3D: planta retangular, cantos por arraste, área restrita, postes/fitas,
+  grade, seleção, histórico, controles de câmera, prévias e layout mobile.
+- Criação direta: câmera quando suportada; medidas digitadas quando indisponível.
+  Após medir, escolha entre montagem na câmera e no 3D, salvando o mesmo contrato.
+- Sessão XR comum, hit-test, medidas de paredes, montagem transitória,
+  visualização/realinhamento de projeto salvo. A guarda de frame ausente não
+  altera a ordem de inicialização que funcionou no Samsung.
 
-## Não entregue como produto
+## Aceite ainda necessário
 
-- Captura/levantamento completo do ambiente pela câmera e edição da planta sobre o chão real.
-- Precisão física garantida, aceite mobile físico, HTTPS/deploy final e testes SUS.
-- Certificação normativa de acessibilidade/segurança ou capacidade otimizada global.
+XR permanece experimental. O usuário testou um Samsung (modelo não informado) e
+relatou funcionamento; iPhone 11 não suportou WebAR. Não houve aceite físico da
+Onda 2B. Precisão de 5% em 20 m, latência, uso prolongado e SUS com cinco usuários
+não foram comprovados. Ver [teste manual](TESTE-MANUAL.md) e
+[pendências XR](XR-PENDENCIAS.md).
 
-A rota experimental `/projects/:id/ar` permite alinhar uma cena salva por dois
-pontos e conferir um terceiro, sem salvar poses nem alterar a origem do projeto.
-O spike `/xr-check` continua preparando o diagnóstico de suporte e hit-test.
-Nenhum dos dois substitui validação física em aparelho. Detalhes em
-[XR-PENDENCIAS.md](XR-PENDENCIAS.md).
-
-## Evidências e critérios
-
-- [QA de integração do Lote 3](QA-LOTE-03.md)
-- [Correções e retestes do fechamento](QA-FECHAMENTO-LOTE-03.md)
-- [Relatório desta passagem e verificações finais](PASSAGEM-COLEGA.md)
-- [Matriz contra os PDFs e mudanças autorizadas](REQUISITOS-ESTADO-ATUAL.md)
-
-Os SPRINT-01/02/03 e PRE-DEVELOPMENT registram a evolução histórica. Falhas de
-instalação, quotas e ausência de ferramentas neles não representam o estado atual.
-Marcar uma tarefa como concluída exige evidência correspondente ao ambiente:
-teste unitário não comprova precisão de câmera nem compatibilidade de aparelhos.
+A montagem AR não salva não sobrevive a recarga/fechamento da aba. A tolerância de
+realinhamento depende de testes reais. Legados com colisões podem exigir ajuste
+antes de conversão. Capacidade conjunta de percursos legados é gulosa, não ótima.
+A decisão de autenticação futura permanece pendente; não confundir galeria pública
+com isolamento por usuário. Nenhum requisito é aprovado apenas por documentação.

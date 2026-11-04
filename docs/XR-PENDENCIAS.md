@@ -1,81 +1,54 @@
-# Spike WebXR — protocolo e pendências
+# Câmera/AR — pendências e protocolo físico
 
-Status: `/xr-check` continua como diagnóstico isolado. A rota experimental
-`/projects/:id/ar` já renderiza a `ProjectScene` salva após alinhamento manual
-por sessão: dois vértices ajustam yaw/translação e um terceiro mostra resíduo.
-Nenhuma pose ou alinhamento é persistido, a escala permanece 1 e a validação
-física em aparelhos reais continua obrigatória.
+Atualizado para back/front em 04/11/2026. Código da branch possui controlador
+compartilhado, montagem ArAssembly, revisão 3D e visualização /ar de cena salva.
+A publicação e o resultado dos testes de integração estão em ondas/status/ONDA-3.md.
 
-## O que a rota verifica
+## Compatibilidade e recursos
 
-- Contexto seguro (`window.isSecureContext`) e anúncio de
-  `navigator.xr.isSessionSupported('immersive-ar')`.
-- Solicitação de sessão somente pelo botão do usuário, com `hit-test` e `local-floor`
-  como features obrigatórias. Se o aparelho não negociar qualquer uma delas, a sessão
-  falha com mensagem explícita. Não há fallback de câmera comum nem retículo simulado.
-- Hit-test originado no espaço `viewer`, transformado para o `local-floor` usado pelo
-  `THREE.WebGLRenderer.xr`. O Three renderer entrega a câmera XR estereoscópica ao
-  renderizar a sessão.
-- O retículo e a ação de marcar só ficam disponíveis quando há pose do viewer, câmera
-  XR ativa e hit em superfície cujo eixo normal está a até 20° da vertical. Esse filtro
-  é heurístico e precisa ser confrontado com os aparelhos-alvo.
-- Duas marcas produzem uma distância euclidiana em metros nas coordenadas locais da
-  sessão. Toque/ação `select` e o botão de sobreposição podem marcar; a sessão usa
-  `dom-overlay` apenas como feature opcional.
-- Saída da sessão cancela o hit-test, remove listeners, esvazia marcas e libera os
-  recursos Three.js. A visibilidade suspende a marcação e oculta o retículo; pose
-  ausente também oculta o retículo e bloqueia novas marcas.
+Detectar contexto seguro e isSessionSupported('immersive-ar'), sem user-agent.
+A montagem exige hit-test/local-floor e DOM Overlay negociado. DOM Overlay é
+pedido como opcional na chamada, mas sua ausência impede a montagem e oferece
+medidas digitadas. Rotas históricas /ar e /xr-check mantêm overlay opcional.
+Câmera comum getUserMedia não mede nem substitui rastreamento espacial.
 
-Os pontos são transitórios e não são convertidos para a origem do projeto. A medida é
-apenas uma leitura experimental do sistema XR, sem tolerância validada. Não use como
-levantamento de ambiente ou como promessa de erro.
+iOS é web sem AR nesta entrega, por decisão do usuário: iPhone 11 usa medidas
+digitadas/editor 3D. Não implementar ARKit, Capacitor, app nativo ou App Clip.
+O usuário relatou WebAR funcionando num Samsung; modelo, sistema, navegador,
+rota e alcance do teste não foram informados. Não presumir que mediu/alinhou
+ou que a nova montagem inteira passou. Nenhum ensaio físico foi feito pelo Codex.
 
-## Protocolo físico obrigatório
+## Implementado não equivale a validado
 
-Execute em HTTPS (localhost serve apenas para diagnóstico local) nos aparelhos e
-navegadores que se pretende suportar. Faça a sessão sob iluminação e condições normais
-de uso e anote também falhas de permissão, superfície, tracking e encerramento.
+- Cantos métricos geram ambiente por createEnvironmentFromMeasuredPoints, sem escala.
+- Montagem usa comandos do core e mantém trabalho após queda da sessão, não após
+  recarregar/fechar a página. Revisão/salvamento usam ProjectScene v2.
+- /ar alinha cena salva por dois pares e confere terceiro; giro foi corrigido
+  em teste Three real. Ainda precisa confirmar no aparelho.
+- Guards contra frame ausente são cobertos por teste; isso não certifica tracking.
+- Não há tolerância de alinhamento fisicamente aprovada; não declarar erro zero
+  por checks vazios nem ajustar escala para esconder discrepância.
 
-1. Registre modelo do aparelho, versão do sistema, navegador/versão, origem HTTPS e
-   estado de `isSessionSupported`.
-2. Inicie a sessão pelo botão, aceite a permissão, confirme o retículo em piso e em
-   uma superfície vertical. Ele deve aparecer no piso e não na parede.
-3. Marque dois pontos no piso separados por **20,00 m medidos com trena**. Evite
-   interromper a sessão entre as marcas. Registre a distância XR e calcule
-   `abs(XR - 20,00) / 20,00 × 100%`.
-4. Repita pelo menos três vezes, encerrando e abrindo uma sessão nova entre repetições.
-   Anote se marcas e retículo param durante perda de tracking/background e se o fim da
-   sessão limpa o estado.
-5. Critério inicial deste spike: erro observado de no máximo **5% em 20 m**, sem tratar
-   esse resultado como garantia para outros locais, distâncias ou usuários. Um único
-   aparelho aprovado não valida todos os alvos.
+## Protocolo no Samsung
 
-## Registro de aparelhos
+Registrar modelo, SO, navegador/versão, URL HTTPS, permissões, iluminação e rota.
+Executar o roteiro completo em TESTE-MANUAL.md, incluindo as duas escolhas após
+medir. Comparar dimensões com trena; para referência de 20 m, registrar medida
+real e XR e calcular 100 * abs(XR-real)/real. Repetir três vezes em sessões novas.
+O alvo documental de 5% em 20 m **não está comprovado** e não garante outras distâncias.
 
-Nenhum ensaio físico foi executado por esta implementação. Preencha com observações,
-sem inferir resultado a partir de emulação ou `isSessionSupported`.
+Verificar: retículo em piso e parede; recusa de plano vertical; perda/retorno de
+pose; sair para outro app/bloquear tela; realinhar em origem diferente; tocar
+botões sem marcar ponto (beforexrselect); marcar na área aberta; desfazer/refazer;
+encerrar/reabrir; conforto com uma mão; muitas pessoas; desempenho/latência.
+Filtro de 20 graus e mira de poste são heurísticas, não tolerâncias de medição.
 
-| Aparelho / SO | Navegador / versão | HTTPS e suporte | Tentativas (20 m) | Erro por tentativa | Tracking / encerramento | Resultado |
-| --- | --- | --- | --- | --- | --- | --- |
-| Pendente | Pendente | Pendente | Pendente | Pendente | Pendente | Não testado |
+## Registro pendente
 
-## Testes locais disponíveis
+| Aparelho | SO/navegador | Rota/alcance | Precisão/tracking/gestos |
+| --- | --- | --- | --- |
+| Samsung, modelo não informado | Não informado | Usuário disse que WebAR funcionou | Não comprovados |
+| iPhone 11 | Não informado | WebAR não funcionou; alternativa manual é a decisão | Novo fluxo manual pendente no aparelho |
 
-`node --experimental-strip-types --test apps/web/components/xr-check/xr-check-logic.test.ts`
-
-Os mocks cobrem pose horizontal válida, plano vertical, pose ausente/inválida e cálculo
-de distância 3-4-12. Eles verificam regras puras; não simulam câmera, sessão WebXR,
-hit-test do navegador, tracking físico ou renderer XR. O typecheck da aplicação também
-não substitui teste em aparelho.
-
-## Próxima etapa: validação do alinhamento integrado
-
-A rota `/projects/:id/ar` implementa o adaptador isolado por sessão: relaciona
-dois vértices da planta com pontos hit-test para estimar translação e yaw, usa um
-terceiro para mostrar resíduo e não altera escala. A cada sessão, o alinhamento
-recomeça e nenhuma transformação ou coordenada XR é persistida.
-
-Depois de preencher a matriz física, revisar o filtro de horizontalidade e definir
-tolerâncias baseadas nos resultados, testar o fluxo em aparelhos-alvo: seleção dos
-pontos, perda de tracking, background, fim de sessão e rotação/reinício da cena.
-Até essa validação, a rota integrada e o spike são experimentais.
+Latência de colisão, uso prolongado e SUS com cinco usuários também não estão
+comprovados. Mocks/headless não preenchem essa tabela como aprovado.

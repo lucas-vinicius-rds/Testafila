@@ -1,126 +1,89 @@
-# Executar em outra máquina
+# Execução local e testes
 
-## Pré-requisitos
+Requer Node 24+, npm e acesso ao registro. Comandos partem da raiz Testafila,
+onde há workspaces `back`, `front`, `back/core`. Não usar caminhos apps/api ou
+apps/web de relatórios antigos. Não há Vite nem login ativo.
 
-- Node.js 24 ou superior e npm compatível com o lockfile (ambiente da equipe: npm 12).
-- Git e acesso ao registro npm na instalação inicial.
-- Build nativo de `better-sqlite3`: usar binário compatível com o Node ou ferramentas
-  de compilação exigidas pelo pacote, se não houver binário disponível na plataforma.
-
-Todos os comandos abaixo partem da raiz do repositório `Testafila`, que contém
-`package.json`. A pasta pai usada pela equipe não é um repositório Git.
+## Instalação e ambiente
 
 ```powershell
 npm ci
-Copy-Item apps/api/.env.example apps/api/.env
 ```
 
-Não sobrescreva um `.env` existente com segredos reais. Edite `apps/api/.env`:
+Só em instalação nova, copie `back/.env.example` para `back/.env`; nunca
+sobrescreva ambiente existente. `API_BASE_URL` do Next fica em `front/.env.local`,
+somente servidor. Padrão http://127.0.0.1:3001, sem /api final.
 
-| Variável | Uso |
-| --- | --- |
-| `APP_ORIGIN` | Origem pública do Next; localmente `http://localhost:3000`. |
-| `DATABASE_PATH` | Opcional; executando pelo workspace, padrão `apps/api/data/testafila.sqlite`. |
-| `HOST` / `PORT` | API: `127.0.0.1` e `3001`. |
-
-Autenticação está desativada: a aplicação não pede conta nem senha e todos os
-projetos ficam compartilhados entre os acessos à mesma instância. O frontend usa a API
-`http://127.0.0.1:3001` por padrão. Se necessário, copie `apps/web/.env.example`
-para `apps/web/.env.local` e ajuste `API_BASE_URL`, somente servidor, sem `/api` final.
-
-## Banco de dados
-
-Crie ou atualize o banco com as migrações:
-
-```powershell
-npm run migrate:api
-```
-
-As migrações preservam projetos antigos e permitem que a galeria compartilhada
-os apresente sem autenticação.
+`APP_ORIGIN` da API é lista de origens exatas separadas por vírgula, incluindo
+localhost e o domínio público quando necessário. `HOST`/`PORT` padrão:
+127.0.0.1/3001. `DATABASE_PATH` padrão relativo ao cwd back: data/testafila.sqlite.
+Não publicar valores de .env, authtoken ou SQLite. Better Auth permanece inativo.
 
 ## Desenvolvimento
 
-Terminal 1:
+Em dois terminais: `npm run dev:back` e `npm run dev:front`. Acesso em
+http://localhost:3000, sem senha. Nesta máquina, `node --run` pode falhar por
+causa de Área de Trabalho no caminho. Alternativa, a partir de back:
 
 ```powershell
-npm run dev:api
+node --env-file-if-exists=.env ../node_modules/@nestjs/cli/bin/nest.js start --watch --entryFile src/main
 ```
 
-Terminal 2:
+Não use banco real para QA de escrita. Defina DATABASE_PATH para diretório
+temporário e porta própria. Para ver front sem afetar 3000, a partir de front:
 
 ```powershell
-npm run dev:web
+$env:NEXT_DIST_DIR='.next-dev-codex'
+node ../node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3120
 ```
 
-Acesse `http://localhost:3000`; a galeria abre sem login. O Nest oferece
-`http://127.0.0.1:3001/api/health`. O navegador usa `/api` pelo Next.
+Use diretório e porta exclusivos por agente. Next gera next-env.d.ts e adiciona
+tipos de rotas ao tsconfig; não comitar mudanças automáticas desses arquivos.
+Nunca gerar build sobre o .next servido por outro processo.
 
-## Build e execução compilada
+## Verificar
 
 ```powershell
-npm run build:api
-npm run build:web
+npm run test:core
+npm run test:xr
+npm run typecheck:core
+npm run typecheck:back
+npm run typecheck:front
+npm run build:back
+npm run test:back
 ```
 
-Em terminais separados:
+Testes backend importam compilado. Testes XR simulado não provam câmera física.
+Para E2E com o front de desenvolvimento já iniciado:
 
 ```powershell
-npm run start --workspace @testafila/api
-npm run start --workspace @testafila/web
+$env:TEST_BASE_URL='http://127.0.0.1:3120'
+npm run test:e2e
 ```
 
-O entrypoint real da API é `apps/api/dist/apps/api/src/main.js`, não
-`apps/api/dist/main.js`. O script do workspace usa o caminho correto.
-Pare o Next servido antes de gerar outro build no mesmo diretório `.next`.
+O fixture E2E inicia Nest em porta efêmera com banco temporário, injeta um legado
+próprio e redireciona as chamadas API do navegador. Não exige TEST_EMAIL/senha.
+Usa Edge instalado no Windows, ou PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH; em outro
+ambiente pode ser necessário `npx playwright install chromium`. Capturas/traces
+ficam em front/test-results, ignorados pelo Git.
 
-## Verificações
+## Produção e recuperação
 
-```powershell
-npm run typecheck:api
-npm run build:api
-npm run test:api
-npm run typecheck:web
-npm run build:web
-node --experimental-strip-types --test --experimental-test-isolation=none tests/domain/*.test.ts tests/domain/queue/*.test.ts
-node --experimental-strip-types --test apps/web/components/xr-check/xr-check-logic.test.ts
-git diff --check
-```
+Com autorização de publicação, parar ambos os serviços, copiar SQLite/WAL/SHM e
+ambientes/artefatos anteriores, compilar `npm run build:back` e
+`npm run build:front`, então iniciar `npm run start:back` e `npm run start:front`.
+Entrypoints: back/dist/src/main.js e Next no diretório front. Fonte e API v2 não
+podem ser publicadas separadamente contra o bundle v1 anterior. Em falha de
+reinício, restaurar o release anterior conforme o marcador da integração.
 
-Os testes API importam o compilado: sempre faça `build:api` após alterar código.
-Os testes Nest criam bancos temporários e não devem tocar no banco de uso local.
-O typecheck Next depende dos tipos de rotas gerados pelo Next; em clone novo,
-rode o build antes de investigar erro por ausência de `.next/types`.
+Não executar migrate:back contra banco real sem backup/ordem. Migrações em testes
+usam banco temporário. Os 21 projetos existentes não são dados descartáveis.
 
-## Celular, HTTPS e limites
+## Celular e HTTPS
 
-### QA automatizado do editor 3D
-
-Com Next e Nest já iniciados, execute `npm run test:editor` para rodar o fluxo
-automatizado do editor. O teste cria projetos compartilhados no banco configurado.
-`TEST_BASE_URL` permite mudar a origem (padrão `http://localhost:3000`).
-
-A configuração usa Edge instalado no Windows e WebGL via SwiftShader. Em outro
-ambiente, instale o Chromium do Playwright (`npx playwright install chromium`) ou
-defina `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`. Há projetos desktop 1280×900,
-mobile 390×844 e small-mobile 320×568; capturas e traces ficam em `test-results`
-(ignorado pelo Git). Viewport/touch emulado não substitui aparelho físico.
-
-`localhost` no celular é o próprio celular. Um acesso pela rede local exige URL
-acessível e APP_ORIGIN/proxy coerentes. Para WebXR em dispositivo, prepare HTTPS
-confiável no navegador do aparelho;
-HTTP de IP local não equivale ao contexto seguro de localhost do computador.
-
-O spike `/xr-check` não deve pedir sessão AR no carregamento. Use seu botão de
-início em aparelho compatível, com acesso HTTPS; veja XR-PENDENCIAS.md.
-Não há deploy pronto ou compatibilidade universal Android/iOS comprovada.
-
-## Aplicações atuais
-
-O repositório contém o frontend Next.js em `apps/web` e a API NestJS em
-`apps/api`. O protótipo Vite legado foi removido; `src/domain/**` continua como
-código compartilhado de geometria e domínio.
-
-SQLite depende de disco persistente: produção precisa de hospedagem compatível,
-backup e segredos configurados. Um frontend em hospedagem estática não substitui
-o servidor Nest nem oferece persistência do arquivo SQLite.
+localhost no celular é o próprio aparelho. Testar pela URL HTTPS do ngrok ativo;
+não encerrar/reconfigurar o terminal do usuário. A origem pública precisa estar
+em APP_ORIGIN para gravar. Não adicionar políticas ngrok sem autorização.
+HTTPS não fornece immersive-ar a um aparelho sem suporte. Samsung: registrar
+modelo/SO/navegador e resultado real. iPhone 11: medidas digitadas e editor 3D.
+Roteiros em TESTE-MANUAL.md; testes físicos ainda precisam de evidência.

@@ -1,99 +1,49 @@
-# Domínio de filas
+# Domínio e contratos
 
-Este documento descreve o módulo puro de edição de filas em `src/domain/queue/index.ts`.
-Ele opera sobre um único `ProjectScene` dos contratos congelados. Não usa React,
-Three.js, banco, relógio ou geração aleatória. A revisão não altera as assinaturas
-de `contracts/project.ts` ou `contracts/queue-editor.ts`.
+Fonte atual: `back/core/contracts` e `back/core/domain`, sem React, Three, Nest
+ou banco. Front usa `@testafila/core`; backend compila o mesmo domínio para JS.
+Uma unidade é um metro, Y para cima e piso XZ.
 
-## Invariantes
+## Cena v2 e legado
 
-- Todas as medidas são metros no plano XZ; a altura é representada pelos campos do
-  contrato, não pela geometria do piso.
-- O ambiente e as áreas restritas são polígonos simples. Áreas podem encostar na
-  parede, mas toda a área precisa caber no ambiente côncavo. A verificação examina
-  arestas e intervalos entre cruzamentos, além dos vértices.
-- Postes precisam manter o raio da base mais a folga em relação a paredes e áreas,
-  e não podem colidir com outros postes. Fitas são segmentos de conexões explícitas:
-  precisam caber no ambiente e evitar áreas, paredes, postes não conectados e outras
-  fitas. Os próprios postes de origem e destino são permitidos como extremidades.
-- Percurso é uma polilinha independente das fitas. Segmentos e footprint corporal
-  devem permanecer dentro do ambiente, com folga, e evitar zonas, postes e fitas.
-  Arestas nulas, auto-interseções e retornos adjacentes de 180° são rejeitados.
-- Pessoas legadas de percurso têm `routeId` e distância numérica juntos; posição e yaw
-  são caches derivados do percurso e verificados. Pessoas livres têm os dois campos
-  nulos e usam posição/yaw como fonte. Estado parcial, com apenas um campo nulo, é inválido.
-- Preenchimento amostra distâncias acumuladas em múltiplos exatos do spacing. A origem
-  fica em distância zero; não encurta o último intervalo para alcançar a ponta do percurso.
-- Contato/conflito com zonas, obstáculos e footprint de outras pessoas invalida a
-  cena. Uma edição é atômica: comando inválido devolve a mesma referência de cena.
-- IDs de ambiente, áreas, vértices, postes, fitas, percursos e pessoas são únicos
-  globalmente na cena. Coordenadas e dimensões precisam ser finitas; dimensões físicas
-  são positivas e folga não pode ser negativa.
-- `environment.confirmedAt: null` é aceito pelo domínio como documento geometricamente
-  válido. A confirmação antes de entrar no editor é uma regra de fluxo da interface.
+ProjectScene v2 contém ambiente, áreas, postes, fitas, percursos legados, pessoas,
+`queue: {personIds: [...]}` e simulação. `people` guarda posição/yaw; a ordem em
+`queue.personIds` liga os vizinhos. Pessoa ligada usa routeId/distância nulos.
 
-## Exports
-
-- `validateQueueScene(scene)` verifica geometria, integridade, dimensões, IDs,
-  posicionamento e caches, devolvendo `{ valid, errors }`.
-- `applyQueueCommand(scene, command)` aplica um comando congelado e valida o documento
-  resultante. Sucesso devolve a nova cena; falha devolve a cena original sem mutá-la.
-- `createQueueHistory(scene)` inicia histórico imutável.
-- `executeQueueCommand(history, command)` registra uma ação válida, limita `past` a
-  100 cenas e limpa `future` após uma nova edição. Falhas preservam o histórico.
-- `undoQueue(history)` e `redoQueue(history)` restauram cenas completas; sem ação
-  disponível, retornam o próprio histórico.
-- `getQueueStats(scene)` soma o comprimento dos percursos, conta pessoas presentes e
-  estima a capacidade conjunta sem contar duas vezes colocações próximas.
+`getQueueMode` distingue empty, chain e legacy. V1 migra em memória para v2 com
+fila vazia e pessoas intactas. GET não regrava. `queue:convert-legacy` é explícito,
+determinístico pela ordem do array people e pode falhar por colisão. Um projeto
+real não converte sem ajustes: ver `ondas/status/DUVIDAS-USUARIO.md`; não apagar
+ou deslocar pessoas silenciosamente para forçar conversão.
 
 ## Comandos
 
-| Comando | Efeito |
-| --- | --- |
-| `environment:vertex-move` | Move vértice pelo ID, recalcula evidência de medição, limpa `confirmedAt` e valida a cena inteira antes de aceitar. |
-| `environment:confirm` | Registra o timestamp ISO informado; a validação completa do ambiente/cena continua obrigatória. |
-| `area:add`, `area:update`, `area:remove` | Cria, atualiza ou remove uma área; a validação impede invalidar elementos existentes. |
-| `post:add`, `post:move`, `post:remove` | Cria, move ou remove poste; remover também apaga fitas dependentes na mesma ação. |
-| `belt:add`, `belt:remove` | Gerencia conexões explícitas sem duplicatas nos dois sentidos. Fita não altera percurso. |
-| `route:set`, `route:remove` | Cria/atualiza ou remove percurso; remover limpa as pessoas associadas. |
-| `people:add`, `people:fill` | Insere após a última pessoa ou substitui o grupo da rota com IDs determinísticos `<idPrefix><índice>`. Preenchimento para no primeiro bloqueio. |
-| `person:add` | Cria pessoa livre `null/null` no ponto solicitado, inicialmente voltada para `+Z` (yaw zero). |
-| `person:move`, `person:rotate` | Edita só a pessoa escolhida e converte-a para livre `null/null`; os demais posicionamentos permanecem. |
-| `person:append` | Cria livre atrás da pessoa de origem: `position - (sin(yaw), cos(yaw)) × spacing`, copiando yaw; colisão rejeita a ação inteira. |
-| `person:remove`, `people:clear` | Remove uma pessoa ou limpa um percurso/a cena. |
-| `simulation:spacing` | Aceita 0,5, 0,8 ou 1,0 m e redistribui somente pessoas de percurso até capacidade segura; livres não se movem e o valor novo governa o próximo append. |
+- `person:add` só começa uma fila vazia; `person:append` entra atrás da última.
+- `simulation:spacing` recompõe a cadeia inteira com 0,5/0,8/1 m.
+- Mover a primeira translada a fila; mover outra preserva distância da anterior
+  e reposiciona o trecho seguinte. Girar aplica yaw absoluto e gira a cauda.
+- Remover fecha a vaga. Invalidade mantém a instância da cena original.
+- Área move/gira em torno do centroide/remove; poste move/remove, sem giro útil.
+- Fita deriva dos endpoints; um poste aceita várias fitas. Não permitir
+  duplicata A-B/B-A, passagem por terceiro poste ou obstáculos.
+- Percursos e preenchimento antigos continuam para legado, não misturados à cadeia.
 
-## Limites e comportamento numérico
+Comandos são imutáveis e atômicos; histórico tem até 100 entradas, desfazer/refazer
+restaura documento completo. Revisão de banco só muda ao salvar.
 
-- A tolerância geométrica comum é `EPSILON = 1e-7` (unidades do modelo, metros).
-  Tangência é tratada de forma inclusiva nas colisões de zonas, objetos e pessoas.
-- Geração de pessoas e validação da cena têm teto defensivo de 10.000 pessoas, alinhado
-  ao limite informado da API. O servidor também limita o documento serializado a
-  100 KiB antes de persistir.
-- Capacidade conjunta usa alocação determinística gulosa na ordem de `scene.routes`.
-  Cada rota para no primeiro obstáculo ou posição ocupada; o algoritmo não procura uma
-  solução combinatória global e a capacidade pode depender da ordem das rotas.
-- `getQueueStats` é uma estimativa geométrica. Não representa vazão, evacuação,
-  atendimento, comportamento humano ou validação física do espaço.
-- A UI traduz detalhes de validação para mensagens orientadas ao usuário. O domínio
-  mantém erros diagnósticos para integração e testes; não substitui guards de fluxo,
-  autenticação, validação de payload ou limites de persistência do servidor.
+## Geometria, medidas e câmera
 
-## Cobertura verificada
+Polígonos simples com fechamento implícito, interseções inclusivas, finitude,
+footprint, contenção e folga são compartilhados com o servidor. Tangência pode
+ser colisão conforme a regra do footprint; não contornar validação na UI.
+Checks de medição vazios não significam erro zero nem tolerância aprovada.
 
-Em 28/10/2026, a suíte de domínio completa executou 125 testes em 20 suítes, sem
-falhas, usando Node 24 com `--experimental-strip-types --experimental-test-isolation=none`.
-Os casos cobrem geometria côncava, footprint/folga, tangência, áreas, postes e fitas,
-retornos e auto-interseções, quinas e extremos, ocupação entre rotas/livres, IDs,
-caches, cenas com pessoas livres `null/null`, comandos de mover/girar/append, alteração
-e confirmação do ambiente, atomicidade, spacing e undo/redo. Há teste de geração e
-validação no teto de 10.000 pessoas. TypeScript isolado com `--strict`,
-`npm run build:api` e `git diff --check` passaram.
+`createEnvironmentFromMeasuredPoints({points,recordedAt,wallHeightMeters?})`
+recebe cantos métricos na ordem. Primeiro vira origem e primeira parede fica em
++X, por rotação/translação sem escala ou espelhamento. Retorna environment com
+source webxr/checks vazios/confirmedAt null e sessionToProject separado.
+`sessionPointToProject` usa essa transformação só na sessão; nunca a persistir.
 
-## Próximas verificações
-
-- Reexecutar os testes Nest no ambiente do coordenador após incorporar esta revisão;
-  o build da API passou nesta tarefa, mas as integrações Nest não foram executadas.
-- Completar QA manual humano de gestos e legibilidade conforme `docs/QA-FECHAMENTO-LOTE-03.md`.
-- WebXR/câmera e realinhamento continuam pendentes de implementação e validação em
-  aparelhos reais; ver `docs/REQUISITOS-ESTADO-ATUAL.md`.
+Epsilon geométrico 1e-7 não é precisão de sensor. Teto operacional de 10.000 pessoas
+não é certificação de desempenho. Capacidade conjunta de percursos usa alocação
+gulosa determinística, não otimização global. Testes: `npm run test:core`.

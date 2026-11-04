@@ -1,81 +1,68 @@
-﻿# Arquitetura atual
+# Arquitetura atual
 
-Atualizado em 27/10/2026. Este arquivo descreve o código entregue; a proposta
-original está em [histórico](historico/ARQUITETURA-PLANEJADA-2026-10-22.md).
-
-## Organização
+Fonte: branch `ondas/camera-e-arquitetura`, 04/11/2026. Estado dos processos e
+publicação: [ONDA-3.md](ondas/status/ONDA-3.md).
 
 ```text
-apps/web/app/            Next App Router, páginas e proxy /api
-apps/web/components/     formulários, dashboard e editor
-apps/web/scene/          visualizador R3F e interação 3D
-apps/web/lib/            cliente HTTP, construção de cena e mensagens
-apps/api/src/           Nest, Better Auth, projetos e banco
-apps/api/test/          testes Node sobre módulos compilados e Nest real
-contracts/              ProjectScene, comandos e props comuns
-src/domain/             geometria pura, medição e filas
-tests/domain/           testes do domínio, sem React/Three/banco
-docs/                   documentação canônica e evidências
+back/
+  src/modules/{projects,health,auth}/  Nest; auth inativo
+  src/infra/database/                SQLite e migrações de tabelas
+  src/common/                        erros e origens permitidas
+  core/contracts/                    ProjectScene e comandos
+  core/domain/                       TypeScript puro e funções geométricas
+  core/tests/                        testes de domínio
+  test/                              integração Nest em bancos temporários
+  data/                              SQLite/WAL/SHM, ignorados pelo Git
+front/
+  app/                               Next App Router e proxy /api
+  features/{dashboard,settings,project-creation,editor,ar}/
+  shared/                            HTTP, marca, navegação e preferências
+  tests/e2e/                         navegador com API/banco descartáveis
 ```
 
-O spike `/xr-check` é isolado em `apps/web/app/xr-check` e
-`apps/web/components/xr-check`. Ele prepara diagnóstico e validação de
-WebXR/hit-test. O protótipo Vite legado foi removido; `src/domain/**` permanece
-como domínio compartilhado pelo editor e pela API.
+## Fronteiras
 
-## Fluxo de dados
+- `back/core` não importa React, Three, Next, Nest, banco ou infraestrutura.
+- O frontend importa contratos/domínio por `@testafila/core/contracts/...` e
+  `@testafila/core/domain/...`, nunca por caminho para `back/core` ou `back/src`.
+- `back/src` usa caminhos relativos para o core; o tsc compila os dois em
+  `back/dist/{src,core}` e reescreve extensões para `.js`. O pacote core exporta
+  TypeScript para o bundler frontend, não é o entrypoint da API de produção.
+- Testes E2E podem iniciar uma API compilada descartável. Isso é infraestrutura
+  de teste, não importação de servidor pela aplicação frontend.
 
-Navegador → Next (porta 3000) → proxy `/api/**` → Nest (127.0.0.1:3001)
-→ serviços de projeto → SQLite.
+## Dados e consistência
 
-O navegador só usa URLs de mesma origem. `API_BASE_URL` é lida pelo servidor
-Next. Cookie/Set-Cookie e Origin são preservados; headers de conexão e
-encaminhamento recebidos são filtrados. Timeout upstream: 10 s; falha: 502.
+Navegador → Next 3000 → proxy `/api/**` → Nest 127.0.0.1:3001 → SQLite.
+`API_BASE_URL` é exclusivamente server-side. Origem pública e local são
+configuradas como lista exata em `APP_ORIGIN`, separada por vírgulas; CORS e
+POST/PATCH/DELETE usam a mesma lista, sem wildcard.
 
-Autenticação está desativada nesta revisão. Os projetos existentes e novos são
-acessíveis a qualquer pessoa com acesso à aplicação; a galeria é compartilhada.
-Mutações rejeitam origens não confiáveis. O SQLite e segredos de serviços externos
-continuam fora do Git.
+AuthModule permanece fora de AppModule. Não há login ativo nem isolamento por
+usuário nesta instância. Projetos são compartilhados. O módulo auth permanece
+no código, aguardando decisão; não o considerar ativo por existir.
 
-## Documento e consistência
+ProjectScene v2 é documento único para editor, API e AR. A cadeia usa
+`queue.personIds`; posições/yaw ficam em `people`. Comando inválido mantém a
+cena; histórico imutável até 100 ações. Servidor repete validação. Salvar exige
+`expectedRevision`, devolve 409 no conflito e não sobrescreve rascunho.
 
-`contracts/project.ts` define um único ProjectScene JSON versionado: ambiente,
-medição, áreas restritas, postes, fitas, percursos, pessoas e simulação.
-Uma unidade = um metro; Y aponta para cima, piso em XZ. Câmera, Mesh,
-seleção, preview de arraste e histórico não são persistidos.
+GET migra v1 para v2 em memória e não regrava JSON, metadados ou revisão. Pessoas
+legadas permanecem intactas até conversão explícita. A remoção do aceite v1 em
+salvamentos é tarefa da integração Onda 3; leitura legada continua suportada.
 
-A UI aplica comandos imutáveis e guarda até 100 ações. Operação inválida
-preserva o documento anterior. Frontend e servidor usam `validateQueueScene`.
-O servidor valida shape, finitude, limites, geometria e referências antes de salvar.
-SQLite grava atomicamente com `expectedRevision`; versão divergente retorna 409.
-JSON acima de 100 KiB recebe 413. Não há substituto via localStorage.
+## Câmera e renderização
 
-Medição manual não atesta precisão física. Evidência vazia não implica erro zero.
-Rotas são independentes de fitas; capacidade é geométrica, com alocação gulosa
-entre percursos e limite de 10.000 pessoas. Não é certificação de evacuação/ABNT.
+Editor usa R3F client-only; labels não usam roots Html/Drei. Montagem AR usa
+Three.js e o mesmo documento/comandos, com controlador de sessão compartilhado
+em `front/features/ar/session`. Geometrias AR compartilhadas ficam em `ar/scene`.
 
-## Renderização
+`createEnvironmentFromMeasuredPoints` normaliza cantos métricos: primeiro na
+origem, primeira parede em +X, sem escala/espelhamento. Transformação de sessão
+fica em memória e não integra ProjectScene. Queda da sessão preserva trabalho;
+recarregar/matar a página perde o que não foi salvo. Reiniciar exige realinhamento.
 
-R3F é carregado no cliente, com Canvas em `frameloop=demand`, DPR até 1,5,
-floor XZ triangulado, paredes translúcidas, grade, vistas e OrbitControls sem
-inércia. Cotas/rótulos usam sprites de CanvasTexture local, sem roots Html/Drei.
-Cancelamento/captura são tratados no DOM conectado, com limpeza e bloqueio de
-clique residual. Geometrias, materiais, texturas e listeners têm descarte.
-
-Identidade: [design de referência](referencias/DESIGN-SLIDE-CINTIA.md).
-Não há Tailwind ou Prisma na implementação atual; menções na proposta antiga
-são históricas. Dependências efetivas estão nos manifests e package-lock.
-
-## XR e entrega
-
-A rota cliente `/projects/:id/ar` carrega a mesma `ProjectScene` salva e abre
-uma sessão WebXR com `hit-test` e `local-floor`. Dois vértices escolhidos pelo
-usuário calculam yaw e translação; um terceiro produz o resíduo de conferência.
-A transformação é mantida apenas na memória da sessão, com escala fixa em 1,
-e não altera dados persistidos. O spike `/xr-check` permanece como diagnóstico
-isolado de superfície e distância.
-
-Diagnóstico em aparelho real, HTTPS público, tolerâncias em 20 m e precisão
-continuam pendentes. Um teste de código ou acesso à câmera não substitui esses
-requisitos. Consulte [pendências XR](XR-PENDENCIAS.md) e
-[estado dos requisitos](REQUISITOS-ESTADO-ATUAL.md).
+`immersive-ar`, `hit-test` e `local-floor` são necessários. A montagem exige
+DOM Overlay efetivamente negociado: ele é pedido como recurso opcional para
+preservar a ordem de negociação, mas sua ausência encerra o fluxo e oferece
+medidas digitadas. Não há fallback métrico baseado em getUserMedia.

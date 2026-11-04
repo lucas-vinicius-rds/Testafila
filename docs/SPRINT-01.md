@@ -1,3 +1,5 @@
+> Registro histórico, anterior ao fechamento da Onda 3 (04/11/2026). Caminhos, login, pessoas livres e limites XR descritos abaixo podem estar superados. Consulte [índice atual](README.md) e [status da Onda 3](ondas/status/ONDA-3.md); este documento não prova o estado publicado.
+
 # Primeiro lote — fundação
 
 Ambiente liberado posteriormente pelo usuário: rede e filesystem agora disponíveis.

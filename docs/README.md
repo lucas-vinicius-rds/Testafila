@@ -1,58 +1,34 @@
 # Documentação TestaFila
 
-[Panorama local de 04/11/2026](PANORAMA-LOCAL-2026-11-04.md): atualização pelo fork
-Ricardo, execução, resultado real dos testes, WebAR e verificação pública ngrok.
+Atualização de arquitetura e contratos em 04/11/2026, na branch
+`ondas/camera-e-arquitetura`. Comece pelas [regras das ondas](ondas/README.md)
+e pelo [estado da Onda 3](ondas/status/ONDA-3.md). Este último separa código,
+evidência e publicação; não confunda fonte atual com bundle antigo em execução.
 
-Próxima revisão solicitada: [ondas 5 — fila conectada e app touch](SPRINT-05.md).
-Plano delegado; não representa implementação já concluída. O usuário fará aceite.
-
-Revisão do editor em 28/10: [SPRINT-04.md](SPRINT-04.md),
-[3D-INTERACOES.md](3D-INTERACOES.md) e [SKILLS-LOTE04.md](SKILLS-LOTE04.md).
-O relatório de 27/10 abaixo descreve a entrega anterior; a interface atual usa
-retângulo, ajuste de cantos no canvas e pessoas independentes de percursos.
-
-Atualizada em 27/10/2026. **Comece pelo [relatório de passagem](PASSAGEM-COLEGA.md).**
-Estado do produto: editor manual/3D funcional; MVP WebAR ainda incompleto.
-
-## Para continuar o desenvolvimento
-
-| Documento | Conteúdo |
+| Documento atual | Assunto |
 | --- | --- |
-| [PASSAGEM-COLEGA.md](PASSAGEM-COLEGA.md) | Entregas, verificações, riscos, pendências e próximos passos. |
-| [EXECUCAO-LOCAL.md](EXECUCAO-LOCAL.md) | Instalação, ambiente, conta administrativa, comandos e solução de problemas. |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Estrutura implementada e fluxo navegador/Next/Nest/SQLite. |
-| [BACKEND.md](BACKEND.md) | API, autenticação, banco e limites. |
-| [FRONTEND.md](FRONTEND.md) | Rotas, proxy, editor e estados de erro. |
-| [DOMINIO.md](DOMINIO.md) | Geometria, comandos, capacidade e invariantes. |
-| [XR-PENDENCIAS.md](XR-PENDENCIAS.md) | Spike experimental, validação física e AR ainda faltante. |
-| [PLANO-WEBAR.md](PLANO-WEBAR.md) | Proposta futura para integrar WebAR ao editor, condicionada à validação física. |
-| [REQUISITOS-ESTADO-ATUAL.md](REQUISITOS-ESTADO-ATUAL.md) | Matriz dos PDFs e alterações posteriores autorizadas. |
-| [TESTE-MANUAL.md](TESTE-MANUAL.md) | Roteiro de aceite humano e registro de resultados. |
-| [DELIVERY.md](DELIVERY.md) | Síntese do estado de entrega. |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | back/front/core e dependências |
+| [EXECUCAO-LOCAL.md](EXECUCAO-LOCAL.md) | instalar, executar, testar e preservar dados |
+| [BACKEND.md](BACKEND.md) | API compartilhada, origens e persistência |
+| [FRONTEND.md](FRONTEND.md) | rotas, fluxo, editor e proxy |
+| [DOMINIO.md](DOMINIO.md) | cena v2, cadeia, legado e geometria |
+| [PLANO-WEBAR.md](PLANO-WEBAR.md) | fluxo AR atual e limites |
+| [XR-PENDENCIAS.md](XR-PENDENCIAS.md) | compatibilidade e validação física pendente |
+| [TESTE-MANUAL.md](TESTE-MANUAL.md) | roteiros Samsung e iPhone 11 |
+| [DELIVERY.md](DELIVERY.md) | estado da entrega |
+| [REQUISITOS-ESTADO-ATUAL.md](REQUISITOS-ESTADO-ATUAL.md) | PDFs e decisões posteriores |
 
-## Evidências datadas
+## Evidências e planejamento
 
-- [RELATORIO-MUDANCAS-2026-11-04.md](RELATORIO-MUDANCAS-2026-11-04.md): WebAR experimental, remoção do protótipo legado e verificações desta sessão.
-- [QA-LOTE-04.md](QA-LOTE-04.md): build final, três viewports, fluxo visual completo e capturas de 28/10.
+[Onda 0](ondas/status/ONDA-0.md), [Onda 1 Codex](ondas/status/ONDA-1-codex.md),
+[Onda 2 Codex](ondas/status/ONDA-2-codex.md), [Onda 2 Retina](ondas/status/ONDA-2-retina.md)
+e [Onda 2 Vitral](ondas/status/ONDA-2-vitral.md) registram verificações datadas.
+O ajuste direto do fluxo está em [Onda 2B](ondas/ONDA-2B-FLUXO-DIRETO.md).
+Nenhum marcador de teste simulado comprova funcionamento físico de câmera.
 
-- [QA-LOTE-03.md](QA-LOTE-03.md): primeira rodada integrada de 22/10.
-- [QA-FECHAMENTO-LOTE-03.md](QA-FECHAMENTO-LOTE-03.md): correções e retestes posteriores.
-- [SPRINT-01.md](SPRINT-01.md), [SPRINT-02.md](SPRINT-02.md) e
-  [SPRINT-03.md](SPRINT-03.md): tarefas/contratos de cada lote, com escopos históricos.
-- [PRE-DEVELOPMENT.md](PRE-DEVELOPMENT.md) e [SKILLS.md](SKILLS.md): preparação e ferramentas.
+`SPRINT-*`, `QA-*`, relatórios/passagens datados e `historico/` descrevem momentos
+anteriores. Neles, referências a `apps/web`, `apps/api`, login, Vite ou pessoas
+livres não representam a arquitetura atual. Não executar comandos antigos sem
+consultar EXECUCAO-LOCAL. PDFs e identidade estão em `referencias/`.
 
-## Referências e histórico
-
-- [XRD original](referencias/XR_Design_Document_TestaFila.pdf).
-- [Plano original](referencias/Plano_de_Projeto%20-%20TestaFila.pdf).
-- [One-page concept original](referencias/One_Page_Concept_TestaFila_UnicaPagina.pdf).
-- [Identidade slide-cintia](referencias/DESIGN-SLIDE-CINTIA.md).
-- [Passagem anterior completa](historico/PASSAGEM-ANTERIOR-2026-10-22.md).
-- [Planejamento arquitetural antigo](historico/ARQUITETURA-PLANEJADA-2026-10-22.md).
-- [Coordenação antiga](historico/COORDENACAO-2026-10-22.md).
-- [README original do protótipo](historico/README-PROTOTIPO-ORIGINAL.md).
-
-As referências são preservadas; isso não significa que cada promessa delas já
-foi implementada. Histórico não é o estado vigente. O README da raiz e o da API
-servem como atalhos; AGENTS.md fica na raiz para descoberta pelos agentes.
-Não registrar senhas, segredos de sessão ou cópias do banco nestes documentos.
+Não versionar `.env`, SQLite/WAL/SHM, authtokens ou cópias de dados do usuário.

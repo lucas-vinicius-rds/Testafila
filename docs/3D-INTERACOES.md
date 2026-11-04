@@ -1,3 +1,5 @@
+> Registro histórico, anterior ao fechamento da Onda 3 (04/11/2026). Caminhos, login, pessoas livres e limites XR descritos abaixo podem estar superados. Consulte [índice atual](README.md) e [status da Onda 3](ondas/status/ONDA-3.md); este documento não prova o estado publicado.
+
 # Interações da cena 3D (Onda 2 — Sprint 05)
 
 A cena recebe somente o documento `ProjectScene` e props transitórias congeladas em `contracts/scene-viewer.ts`. Ferramenta ativa, modo de interação (`navigate` vs `edit`), grade métrica, câmera, seleção, prévias e callbacks ficam fora do documento persistido. O piso usa XZ em metros, com Y para cima (+Y).

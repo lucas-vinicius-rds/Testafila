@@ -1,3 +1,5 @@
+> Registro histórico, anterior ao fechamento da Onda 3 (04/11/2026). Caminhos, login, pessoas livres e limites XR descritos abaixo podem estar superados. Consulte [índice atual](README.md) e [status da Onda 3](ondas/status/ONDA-3.md); este documento não prova o estado publicado.
+
 # Relatório de mudanças — 4 de novembro de 2026
 
 Este relatório registra as alterações feitas nesta sessão. O worktree já
