@@ -4,6 +4,7 @@ import { DatabaseService } from '../../infra/database/database.service.ts';
 import { AppError } from '../../common/types.ts';
 import { validateSaveProjectInput } from './validation.ts';
 import type { SavedProject } from '../../../core/contracts/project.ts';
+import { migrateProjectScene } from '../../../core/domain/queue/migration.ts';
 
 const LOCAL_OWNER_ID = 'local-project-owner';
 
@@ -70,9 +71,9 @@ export class ProjectsService {
       throw new AppError(404, 'NOT_FOUND', 'Projeto não encontrado');
     }
 
-    let sceneObj;
+    let sceneObj: SavedProject['scene'];
     try {
-      sceneObj = JSON.parse(row.scene);
+      sceneObj = migrateProjectScene(JSON.parse(row.scene));
     } catch {
       throw new AppError(500, 'INTERNAL_SERVER_ERROR', 'Erro ao ler dados da cena do projeto');
     }
@@ -95,7 +96,7 @@ export class ProjectsService {
     const projectId = crypto.randomUUID();
     const now = new Date().toISOString();
     const revision = 1;
-    const schemaVersion = 1;
+    const schemaVersion = validatedInput.scene.schemaVersion;
     const sceneJson = JSON.stringify(validatedInput.scene);
 
     this.db.transaction(() => {
@@ -140,9 +141,9 @@ export class ProjectsService {
 
       const result = this.db
         .prepare(
-          'UPDATE projects SET name = ?, scene = ?, revision = ?, updated_at = ? WHERE id = ? AND revision = ?'
+          'UPDATE projects SET name = ?, scene = ?, schema_version = ?, revision = ?, updated_at = ? WHERE id = ? AND revision = ?'
         )
-        .run(validatedInput.name, sceneJson, nextRevision, now, id, validatedInput.expectedRevision);
+        .run(validatedInput.name, sceneJson, validatedInput.scene.schemaVersion, nextRevision, now, id, validatedInput.expectedRevision);
 
       if (result.changes !== 1) {
         throw new AppError(409, 'CONFLICT', 'Falha ao aplicar revisão atômica no projeto');

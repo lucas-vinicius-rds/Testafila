@@ -79,7 +79,7 @@ test('Scene and Input Validation', async (t) => {
 
   await t.test('rejects invalid schemaVersion and units', () => {
     const scene = createValidScene();
-    scene.schemaVersion = 2;
+    scene.schemaVersion = 999;
     assert.throws(() => validateProjectScene(scene), (err) => err instanceof AppError && err.statusCode === 400);
 
     scene.schemaVersion = 1;

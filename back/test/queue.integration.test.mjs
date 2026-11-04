@@ -12,6 +12,7 @@ test('Nest persists valid queue commands and rejects altered geometry', async ()
   const { NestFactory } = await import('@nestjs/core');
   const { AppModule } = await import('../dist/src/app.module.js');
   const { applyQueueCommand } = await import('../dist/core/domain/queue/index.js');
+  const { migrateProjectScene } = await import('../dist/core/domain/queue/migration.js');
   let app;
   try {
     app = await NestFactory.create(AppModule, { logger: false });
@@ -28,6 +29,7 @@ test('Nest persists valid queue commands and rejects altered geometry', async ()
       restrictedAreas: [], posts: [], belts: [], routes: [], people: [],
       simulation: { spacingMeters: 0.8, personHeightMeters: 1.7, personRadiusMeters: 0.22, clearanceMeters: 0.05 },
     };
+    scene = migrateProjectScene(scene);
     const commands = [
       { type: 'area:add', area: { id: 'zone', name: 'Balcão', vertices: [{ id: 'zone-a', x: 4, z: 5 }, { id: 'zone-b', x: 6, z: 5 }, { id: 'zone-c', x: 6, z: 7 }, { id: 'zone-d', x: 4, z: 7 }] } },
       { type: 'post:add', post: { id: 'post-a', position: { x: 1, z: 1 }, heightMeters: 0.95, baseRadiusMeters: 0.16 } },
@@ -42,7 +44,10 @@ test('Nest persists valid queue commands and rejects altered geometry', async ()
       scene = result.scene;
     }
     assert.equal(scene.people.length, 9);
-    const input = { name: 'Fila integrada', scene, expectedRevision: null };
+    // Preserve legacy route coverage through the API's transitional v1 input.
+    const legacyInputScene = { ...scene, schemaVersion: 1 };
+    delete legacyInputScene.queue;
+    const input = { name: 'Fila integrada', scene: legacyInputScene, expectedRevision: null };
     const createdResponse = await fetch(`${base}/api/projects`, { method: 'POST', headers, body: JSON.stringify(input) });
     const createdBody = await createdResponse.text();
     assert.equal(createdResponse.status, 201, createdBody);
@@ -92,7 +97,7 @@ test('Nest persists valid queue commands and rejects altered geometry', async ()
     });
     assert.equal(update.status, 200, await update.text());
 
-    // The visual editor can place a first person without inventing a route.
+    // The visual editor starts a connected chain without inventing a route.
     let freeScene = { ...scene, restrictedAreas: [], posts: [], belts: [], routes: [], people: [] };
     const placeFree = applyQueueCommand(freeScene, {
       type: 'person:add',
@@ -125,7 +130,9 @@ test('Nest persists valid queue commands and rejects altered geometry', async ()
       freeScene = result.scene;
     }
     assert.equal(freeScene.routes.length, 0);
-    assert.ok(Math.abs(freeScene.people[1].position.x - 1.2) < 1e-7, '+1 is behind the source facing +X');
+    assert.deepEqual(freeScene.queue.personIds, ['free-a', 'free-b']);
+    assert.ok(Math.abs(freeScene.people[1].position.x - 3.8) < 1e-7, 'moving/rotating the first person moves the connected tail behind -X');
+    assert.ok(Math.abs(freeScene.people[1].position.z - 4) < 1e-7);
     const freeUpdate = await fetch(`${base}/api/projects/${freeProject.id}`, {
       method: 'PATCH', headers, body: JSON.stringify({ name: freeProject.name, scene: freeScene, expectedRevision: 1 }),
     });
