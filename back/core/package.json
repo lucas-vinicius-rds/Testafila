@@ -1,0 +1,21 @@
+{
+  "name": "@testafila/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Contratos e dominio em TypeScript puro. Sem React, Three, Nest ou banco.",
+  "exports": {
+    "./contracts/*": "./contracts/*.ts",
+    "./domain": "./domain/index.ts",
+    "./domain/queue": "./domain/queue/index.ts",
+    "./domain/queue/*": "./domain/queue/*.ts",
+    "./domain/*": "./domain/*.ts"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test --experimental-test-isolation=none tests/*.test.ts tests/queue/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}

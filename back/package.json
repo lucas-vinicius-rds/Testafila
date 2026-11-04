@@ -1,0 +1,42 @@
+{
+  "name": "@testafila/back",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --run dev:nest",
+    "dev:nest": "nest start --watch --entryFile src/main",
+    "build": "tsc",
+    "start": "node --env-file-if-exists=.env dist/src/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.mjs",
+    "premigrate": "npm run build",
+    "migrate": "node --env-file-if-exists=.env --input-type=module -e \"import 'reflect-metadata'; import { DatabaseService } from './dist/src/infra/database/database.service.js'; import { runMigrations } from './dist/src/infra/database/migrations.js'; const db = new DatabaseService(); try { runMigrations(db); } finally { db.close(); }\"",
+    "preuser:create": "npm run build",
+    "user:create": "node --env-file-if-exists=.env dist/src/cli/create-user.js"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "better-auth": "^1.3.0",
+    "better-sqlite3": "^12.0.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.0",
+    "@nestjs/testing": "^11.0.0",
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.0.0",
+    "supertest": "^7.0.0",
+    "@types/supertest": "^6.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "~5.9.3"
+  }
+}

@@ -4,21 +4,27 @@
   "version": "1.0.0",
   "type": "module",
   "workspaces": [
-    "apps/web",
-    "apps/api"
+    "front",
+    "back",
+    "back/core"
   ],
   "description": "Checa Fila (TestaFila) - Gestão e Dimensionamento de Filas em Realidade Aumentada (WebXR)",
   "scripts": {
-    "dev:web": "npm run dev --workspace @testafila/web",
-    "dev:api": "npm run dev --workspace @testafila/api",
-    "build:web": "npm run build --workspace @testafila/web",
-    "build:api": "npm run build --workspace @testafila/api",
-    "typecheck:web": "npm run typecheck --workspace @testafila/web",
-    "typecheck:api": "npm run typecheck --workspace @testafila/api",
-    "test:editor": "playwright test",
-    "test:api": "npm run test --workspace @testafila/api",
-    "migrate:api": "npm run migrate --workspace @testafila/api",
-    "user:create": "npm run user:create --workspace @testafila/api"
+    "dev:front": "npm run dev --workspace @testafila/front",
+    "dev:back": "npm run dev --workspace @testafila/back",
+    "build:front": "npm run build --workspace @testafila/front",
+    "build:back": "npm run build --workspace @testafila/back",
+    "start:front": "npm run start --workspace @testafila/front",
+    "start:back": "npm run start --workspace @testafila/back",
+    "typecheck:front": "npm run typecheck --workspace @testafila/front",
+    "typecheck:back": "npm run typecheck --workspace @testafila/back",
+    "typecheck:core": "npm run typecheck --workspace @testafila/core",
+    "test:core": "npm run test --workspace @testafila/core",
+    "test:xr": "npm run test:xr --workspace @testafila/front",
+    "test:back": "npm run test --workspace @testafila/back",
+    "test:e2e": "npm run test:e2e --workspace @testafila/front",
+    "migrate:back": "npm run migrate --workspace @testafila/back",
+    "user:create": "npm run user:create --workspace @testafila/back"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1"
