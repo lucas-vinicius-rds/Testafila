@@ -1,5 +1,8 @@
 # Documentação TestaFila
 
+[Panorama local de 04/11/2026](PANORAMA-LOCAL-2026-11-04.md): atualização pelo fork
+Ricardo, execução, resultado real dos testes, WebAR e verificação pública ngrok.
+
 Próxima revisão solicitada: [ondas 5 — fila conectada e app touch](SPRINT-05.md).
 Plano delegado; não representa implementação já concluída. O usuário fará aceite.
 

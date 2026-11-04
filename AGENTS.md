@@ -1,6 +1,10 @@
 # TestaFila
 
-Pedido mais recente 28/10: docs/SPRINT-05.md prevalece. Agys Flash High com
+Atualização 04/11/2026: docs/ondas/README.md prevalece sobre tudo abaixo. Claude Code
+coordena e não implementa; a equipe é Viga, Retina, Vitral e Codex. As instruções
+abaixo são histórico, exceto as regras de domínio dos dois últimos parágrafos.
+
+Pedido anterior 28/10: docs/SPRINT-05.md prevalecia. Agys Flash High com
 --dangerously-skip-permissions. Sem ask back Maestri e sem gate de revisão do
 coordenador; usuário fará aceite. Escopos/markers no sprint: Cedro base/contratos
 e API, Prumo cena/contrato de cena, Trama UI e fechamento integrado. Não assumir
