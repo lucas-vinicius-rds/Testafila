@@ -3,6 +3,19 @@
 Quatro frentes em paralelo. Caminhos conforme `status/ONDA-0.md`. Numeração `1.x` e `2.x`
 refere-se a [00-PENDENCIAS-CODEX.md](00-PENDENCIAS-CODEX.md).
 
+## Regras práticas vindas da Onda 0
+
+- Leia `status/ONDA-0.md`, principalmente "Comandos novos" e "Para as próximas ondas".
+- `next dev` usa a API real: escrita pelo proxy vai para o banco do usuário. Para testar
+  escrita, suba uma API própria com `DATABASE_PATH` temporário em outra porta.
+- `migrate:back` sem `DATABASE_PATH` atua no banco real. Não rode assim, exceto Codex, se a
+  frente dele exigir, e nunca sem backup dos três arquivos do SQLite.
+- Portas: Vitral usa 3100 com `.next-dev`. Retina usa 3110 com `.next-dev-retina`. Não comite
+  alterações em `front/next-env.d.ts` nem em `front/tsconfig.json` causadas por isso.
+- `dev:back` falha nesta máquina por causa do "Á" no caminho. Use a alternativa do marcador.
+- Quatro agentes commitam na mesma branch: comite só seus caminhos e repita se o Git
+  estiver ocupado. Nunca desfaça alteração de outro agente.
+
 ## Frente A — Viga: fila interligada e comandos
 
 **Escopo exclusivo:** `back/core/**` e `back/src/modules/projects/validation*`.
@@ -26,6 +39,10 @@ Resolve 1.3, parte de domínio de 1.4 e 1.8. Base: Onda 1 de `docs/SPRINT-05.md`
    origem no primeiro canto e +X na primeira parede, validando polígono simples.
 10. Teste de domínio: poste com 3 ou mais fitas em lados distintos, sem liberar duplicata
     A-B/B-A nem passagem por terceiro poste. Se o domínio não for a causa de 1.4, registre.
+11. Migração (achado 1 da Onda 0): `migration.ts` não compila e nunca foi chamado. Fazer a
+    migração realmente rodar ao ler cenas salvas, cobrindo todas as versões presentes no
+    banco, e deixar `typecheck:core` aprovado. Confira em cópia do banco, sem gravar no real,
+    que os 21 projetos abrem pelo novo código. Abrir um projeto não pode regravá-lo.
 
 **Publicar cedo:** assim que os tipos estiverem estáveis, grave
 `status/ONDA-1-viga-contratos.md` com tipos e comandos e avise o coordenador. Retina e Vitral
