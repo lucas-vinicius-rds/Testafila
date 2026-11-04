@@ -10,8 +10,13 @@ ser mínima e registrada.
 3. Revise a arquitetura: confirme que `core` não importa React, Three, Nest ou banco e que
    `front` não importa `back/src`. Corrija desvios.
 4. Regressão: cancelar arraste, clique residual e erro `removeChild` (2.12).
-5. Faça `next build`, reinicie as portas 3000 e 3001 em modo produção e confirme local e
-   pelo ngrok: 21 projetos ou mais, saúde da API e gravação pública.
+5. Remova o aceite de cena v1 no salvamento, que só existia para a transição. A leitura de
+   projetos antigos continua migrando.
+6. Faça `next build` e `build:back` e reinicie as portas 3000 e 3001 juntas, em modo produção.
+   Front novo e API nova nunca podem ficar separados: a API nova devolve cena v2, que o
+   bundle antigo não entende. Antes de reiniciar, faça backup dos três arquivos do SQLite.
+7. Confirme local e pelo ngrok: 21 projetos ou mais, saúde da API, gravação pública e abertura
+   de um projeto antigo e de um novo no editor.
 
 ## Frente B — Codex: documentação
 

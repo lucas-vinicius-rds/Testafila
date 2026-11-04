@@ -32,6 +32,11 @@ sem localStorage e sem salvar pose XR.
    montado se perde. Oferecer **Continuar** com realinhamento por dois pontos ou
    **Revisar no editor**.
 6. Confirmar antes de sair quando houver trabalho não concluído.
+7. Corrigir o giro invertido de `/ar` (achado 1 de `status/ONDA-1-retina.md`), com teste usando
+   Three real que falhe antes e passe depois: o ponto (2,0) precisa cair em (4,5). A tela não
+   pode informar resíduo 0 com a planta no lugar errado. Commit separado, fácil de reverter.
+8. Hoje, se a sessão cair, os cantos se perdem. Isso contraria o item 5: guarde o trabalho
+   fora da sessão para sobreviver à queda, incluindo os cantos da planta.
 
 ## Frente B — Vitral: entrada do fluxo e editor
 
@@ -51,6 +56,13 @@ sem localStorage e sem salvar pose XR.
    oferecer a conversão de projetos antigos. Ajustar textos (1.3, 2.10).
 7. Miniatura 3D do poste na paleta, com o modelo real: gerar a imagem uma vez, com um único
    contexto WebGL, e reutilizar (1.9).
+8. Abrir a bandeja no mobile não pode reenquadrar a câmera. Primeiro confirme se isso ocorre.
+9. "Ver em AR" só aparece com suporte a `immersive-ar`, usando a detecção da Retina.
+10. Exercitar de verdade o que ficou de fora na Onda 1: salvar e reabrir com cena v2 e cadeia,
+    em API própria com banco temporário; `+1` com zoom alterado, duplo toque rápido e arraste;
+    aviso de distância indisponível; `.sr-only` na tela.
+11. `person:append` ignora `sourceId`: pare de enviá-lo em `queue-editor.tsx`. Arrastar pessoa
+    do meio segue em arco: a interface precisa deixar isso previsível.
 
 ## Frente C — Codex: testes do contrato da câmera
 
