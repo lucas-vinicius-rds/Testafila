@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   GearSix,
   PlusCircle,
@@ -12,7 +12,7 @@ type NavItem = {
   href: string;
   label: string;
   icon: typeof GearSix;
-  match: (path: string) => boolean;
+  match: (path: string, settings: boolean) => boolean;
 };
 
 const navItems: NavItem[] = [
@@ -20,7 +20,7 @@ const navItems: NavItem[] = [
     href: "/dashboard",
     label: "Minhas filas",
     icon: Queue,
-    match: (path) => path === "/dashboard" || path.startsWith("/projects/"),
+    match: (path, settings) => !settings && (path === "/dashboard" || (path.startsWith("/projects/") && path !== "/projects/new")),
   },
   {
     href: "/projects/new",
@@ -32,18 +32,19 @@ const navItems: NavItem[] = [
     href: "/dashboard?settings=1",
     label: "Configurações",
     icon: GearSix,
-    match: (path) => path.includes("settings"),
+    match: (path, settings) => path === "/dashboard" && settings,
   },
 ];
 
 export function AppNav() {
   const pathname = usePathname();
+  const settings = useSearchParams().get("settings") === "1";
 
   return (
     <nav className="app-nav" aria-label="Navegação principal">
       <ul className="app-nav-list">
         {navItems.map((item) => {
-          const active = item.match(pathname);
+          const active = item.match(pathname, settings);
           const Icon = item.icon;
           return (
             <li key={item.href}>

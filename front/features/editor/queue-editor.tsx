@@ -22,6 +22,8 @@ import {
 import { queueErrorsForUser } from "./queue-errors";
 import { ScenePreview } from "./scene-preview";
 import { UndoRedoBar } from "./undo-redo-bar";
+import { ItemThumbnail } from "./item-thumbnail";
+import { defaultEditorPreferences, readEditorPreferences, saveEditorPreferences } from "../../shared/editor-preferences";
 import {
   ArrowsOutCardinal,
   ArrowsClockwise,
@@ -48,6 +50,8 @@ type Props = {
 };
 type AreaDraft = { start: PointXZ; end: PointXZ };
 
+const selectionLabels: Record<EditorSelection["kind"], string> = { post: "Poste", person: "Pessoa", belt: "Fita", area: "Área restrita", route: "Percurso" };
+
 function newId(prefix: string): string { return `${prefix}-${crypto.randomUUID()}`; }
 function formatMeters(value: number): string { return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value); }
 function makeAreaVertices(start: PointXZ, end: PointXZ): Vertex[] {
@@ -59,46 +63,11 @@ function makeAreaVertices(start: PointXZ, end: PointXZ): Vertex[] {
   ];
 }
 
-function ItemThumbnail({ kind }: { kind: "post" | "person" | "belt" | "area" }) {
-  if (kind === "post") {
-    return (
-      <svg viewBox="0 0 48 48" aria-hidden="true" className="icon-thumb">
-        <ellipse cx="24" cy="37" rx="9" ry="3" fill="none" stroke="currentColor" strokeWidth="2" />
-        <path d="M24 8v28M20 11h8M20 17h8" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-        <circle cx="24" cy="8" r="3" fill="currentColor" />
-      </svg>
-    );
-  }
-  if (kind === "person") {
-    return (
-      <svg viewBox="0 0 48 48" aria-hidden="true" className="icon-thumb">
-        <circle cx="24" cy="10" r="5" fill="currentColor" />
-        <path d="M24 17v17m-8-10 8-5 8 5m-8 10-6 9m6-9 6 9" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  }
-  if (kind === "belt") {
-    return (
-      <svg viewBox="0 0 48 48" aria-hidden="true" className="icon-thumb">
-        <path d="M10 14v22M38 14v22M10 24h28" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-        <circle cx="10" cy="14" r="4" fill="currentColor" />
-        <circle cx="38" cy="14" r="4" fill="currentColor" />
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 48 48" aria-hidden="true" className="icon-thumb">
-      <path d="M8 10h31v27H8z" fill="currentColor" fillOpacity=".14" stroke="currentColor" strokeWidth="2.5" strokeDasharray="4 3" />
-      <path d="M13 16h21v15H13z" fill="none" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  );
-}
-
 export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onContinue, onSave }: Props) {
   const [history, setHistory] = useState<QueueHistory>(() => createQueueHistory(initialScene));
   const [tool, setTool] = useState<CanvasTool>("post");
-  const [interactionMode, setInteractionMode] = useState<InteractionMode>("edit");
-  const [gridStep, setGridStep] = useState<GridStepMeters>(0.25);
+  const [interactionMode, setInteractionMode] = useState<InteractionMode>(defaultEditorPreferences.navigationMode);
+  const [gridStep, setGridStep] = useState<GridStepMeters>(defaultEditorPreferences.gridStep);
   const [compactLayout, setCompactLayout] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [view, setView] = useState<"top" | "perspective">("top");
@@ -113,6 +82,7 @@ export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onConti
   const [cameraAction, setCameraAction] = useState<{ id: number; type: CameraActionType }>();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const cameraActionId = useRef(0);
+  const lastAppendAt = useRef(0);
   const palettePointer = useRef<{ pointerId: number; kind: "post" | "person"; x: number; y: number; moved: boolean } | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -134,6 +104,17 @@ export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onConti
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
   }, []);
+
+  // Lido depois da montagem para o HTML do servidor e o do cliente coincidirem.
+  useEffect(() => {
+    const preferences = readEditorPreferences();
+    setGridStep(preferences.gridStep);
+    setInteractionMode(preferences.navigationMode);
+  }, []);
+
+  useEffect(() => {
+    if (tool !== "belt") setPendingBelt(null);
+  }, [tool]);
 
   // Reseta confirmação de exclusão ao trocar seleção
   useEffect(() => {
@@ -277,6 +258,9 @@ export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onConti
   }
 
   function appendPerson(person: PersonPlacement) {
+    const now = performance.now();
+    if (now - lastAppendAt.current < 350) return;
+    lastAppendAt.current = now;
     const id = newId("person");
     if (run({ type: "person:append", sourceId: person.id, id }, "Mais uma pessoa conectada atrás na cadeia.")) {
       setSelection({ kind: "person", id });
@@ -475,7 +459,11 @@ export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onConti
               <select
                 id="grid-step-select"
                 value={gridStep === null ? "off" : String(gridStep)}
-                onChange={(e) => setGridStep(e.target.value === "off" ? null : (Number(e.target.value) as GridStepMeters))}
+                onChange={(e) => {
+                  const next = e.target.value === "off" ? null : (Number(e.target.value) as GridStepMeters);
+                  setGridStep(next);
+                  saveEditorPreferences({ gridStep: next });
+                }}
                 title="Passo da grade métrica"
               >
                 <option value="0.1">Grade 0,10 m</option>
@@ -539,7 +527,7 @@ export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onConti
         >
           <div className="mobile-tray-heading">
             <strong>
-              {selection ? `Item: ${selection.kind}` : tool === "area" ? "Área restrita" : tool === "belt" ? "Fita" : tool === "person" ? "Pessoas (Cadeia)" : "Poste"}
+              {selection ? selectionLabels[selection.kind] : tool === "area" ? "Área restrita" : tool === "belt" ? "Fita" : tool === "person" ? "Pessoas (Cadeia)" : "Poste"}
             </strong>
             <button
               type="button"
@@ -738,7 +726,7 @@ export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onConti
           )}
 
           {/* INSPECTOR: POSTE */}
-          {selectedPost && (
+          {selectedPost && tool !== "belt" && (
             <section className="selected-item-panel" aria-label="Poste selecionado">
               <div className="selected-item-title">
                 <ItemThumbnail kind="post" />
@@ -867,14 +855,20 @@ export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onConti
               </div>
 
               {/* Distâncias métricas externas até as paredes */}
+              {areaDistances?.areaId !== selectedArea.id && (
+                <p className="belt-restriction-notice">
+                  <Info size={16} weight="duotone" aria-hidden="true" />
+                  <span>Distâncias até as paredes indisponíveis: só são medidas em planta retangular.</span>
+                </p>
+              )}
               {areaDistances && areaDistances.areaId === selectedArea.id && (
                 <div className="area-wall-metrics" aria-label="Distâncias até paredes externas">
                   <h4>Distâncias até as paredes</h4>
                   <div className="metrics-grid">
-                    <div><span>Norte (+Z)</span><strong>{formatMeters(areaDistances.north)} m</strong></div>
-                    <div><span>Sul (−Z)</span><strong>{formatMeters(areaDistances.south)} m</strong></div>
-                    <div><span>Leste (+X)</span><strong>{formatMeters(areaDistances.east)} m</strong></div>
-                    <div><span>Oeste (−X)</span><strong>{formatMeters(areaDistances.west)} m</strong></div>
+                    <div><span>Norte</span><strong>{formatMeters(areaDistances.north)} m</strong></div>
+                    <div><span>Sul</span><strong>{formatMeters(areaDistances.south)} m</strong></div>
+                    <div><span>Leste</span><strong>{formatMeters(areaDistances.east)} m</strong></div>
+                    <div><span>Oeste</span><strong>{formatMeters(areaDistances.west)} m</strong></div>
                   </div>
                 </div>
               )}

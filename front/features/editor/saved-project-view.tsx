@@ -85,9 +85,13 @@ export function SavedProjectView() {
             <h1 id="saved-project-title">{project.name}</h1>
             <p>Atualizado em {formatDate(project.updatedAt)}</p>
           </div>
-          <div className="view-switch" role="group" aria-label="Ângulo da visualização">
-            <button type="button" className={view === "top" ? "selected" : ""} onClick={() => setView("top")}>Planta</button>
-            <button type="button" className={view === "perspective" ? "selected" : ""} onClick={() => setView("perspective")}>Perspectiva</button>
+          <div className="saved-project-top-actions">
+            <Link className="button-primary" href={`/projects/${encodeURIComponent(project.id)}/edit`}>Editar fila</Link>
+            <Link className="button-secondary" href={`/projects/${encodeURIComponent(project.id)}/ar`}>Ver em AR</Link>
+            <div className="view-switch" role="group" aria-label="Ângulo da visualização">
+              <button type="button" className={view === "top" ? "selected" : ""} onClick={() => setView("top")}>Planta</button>
+              <button type="button" className={view === "perspective" ? "selected" : ""} onClick={() => setView("perspective")}>Perspectiva</button>
+            </div>
           </div>
         </div>
 
@@ -106,9 +110,7 @@ export function SavedProjectView() {
           ? "Nenhuma conferência de medida foi registrada. Sem uma segunda medida para comparar, não há erro calculado."
           : `${environment.measurement.checks.length} ${environment.measurement.checks.length === 1 ? "conferência de medida registrada" : "conferências de medida registradas"}.`}</p>
         <div className="saved-project-actions"><Link className="button-secondary" href="/dashboard">Voltar à galeria</Link>
-          <div><Link className="button-primary" href={`/projects/${encodeURIComponent(project.id)}/edit`}>Editar fila</Link>
-            <Link className="button-secondary" href={`/projects/${encodeURIComponent(project.id)}/ar`}>Abrir WebAR experimental</Link>
-            <span>Exige HTTPS, aparelho compatível e realinhamento nesta sessão.</span></div></div>
+          <span>AR exige HTTPS, aparelho compatível e realinhamento nesta sessão.</span></div>
       </section>
     </main>
   );

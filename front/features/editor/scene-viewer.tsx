@@ -7,6 +7,8 @@ import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import type { Belt, PointXZ, ProjectScene, Stanchion } from '@testafila/core/contracts/project';
 import type { EditorSelection } from '@testafila/core/contracts/queue-editor';
+import { AppendPersonButton, worldUnitsPerPixel } from './append-person-button';
+import { calculateAreaDistances } from './area-distances';
 import type { AreaWallDistances, CanvasTool, FloorProjector, GridStepMeters, InteractionMode, SceneViewerProps } from '@testafila/core/contracts/scene-viewer';
 
 const palette = { floor: '#f8f6ef', wall: '#d8dcd4', green: '#355b48', dark: '#243c32', line: '#c8c5b8', area: '#e8ece4', person: '#606963', guide: '#1e382b' };
@@ -68,39 +70,6 @@ function snapPoint(point: PointXZ, step: GridStepMeters): PointXZ {
     x: Math.round(point.x / step) * step,
     z: Math.round(point.z / step) * step,
   };
-}
-
-function calculateAreaDistances(areaVertices: PointXZ[], perimeterVertices: PointXZ[]): { north: number; south: number; east: number; west: number } | null {
-  if (perimeterVertices.length < 4 || areaVertices.length < 3) return null;
-  // Verifica se o perímetro é ortogonal/retangular alinhado aos eixos
-  let perimMinX = Infinity; let perimMaxX = -Infinity;
-  let perimMinZ = Infinity; let perimMaxZ = -Infinity;
-  for (const v of perimeterVertices) {
-    if (v.x < perimMinX) perimMinX = v.x;
-    if (v.x > perimMaxX) perimMaxX = v.x;
-    if (v.z < perimMinZ) perimMinZ = v.z;
-    if (v.z > perimMaxZ) perimMaxZ = v.z;
-  }
-  for (let i = 0; i < perimeterVertices.length; i++) {
-    const a = perimeterVertices[i];
-    const b = perimeterVertices[(i + 1) % perimeterVertices.length];
-    const isHoriz = Math.abs(a.z - b.z) < 1e-4;
-    const isVert = Math.abs(a.x - b.x) < 1e-4;
-    if (!isHoriz && !isVert) return null;
-  }
-  let areaMinX = Infinity; let areaMaxX = -Infinity;
-  let areaMinZ = Infinity; let areaMaxZ = -Infinity;
-  for (const v of areaVertices) {
-    if (v.x < areaMinX) areaMinX = v.x;
-    if (v.x > areaMaxX) areaMaxX = v.x;
-    if (v.z < areaMinZ) areaMinZ = v.z;
-    if (v.z > areaMaxZ) areaMaxZ = v.z;
-  }
-  const north = Math.max(0, perimMaxZ - areaMaxZ); // +Z
-  const south = Math.max(0, areaMinZ - perimMinZ); // -Z
-  const east = Math.max(0, perimMaxX - areaMaxX);   // +X
-  const west = Math.max(0, areaMinX - perimMinX);   // -X
-  return { north, south, east, west };
 }
 
 function boundsOf(scene: ProjectScene) {
@@ -276,16 +245,6 @@ function createLabelTexture(text: string, kind: 'dimension' | 'area', selected: 
   return texture;
 }
 
-function createActionTexture(text: string) {
-  const canvas = document.createElement('canvas'); canvas.width = 192; canvas.height = 96;
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('Não foi possível criar o contexto 2D da ação da cena.');
-  context.fillStyle = palette.dark; context.beginPath(); context.roundRect(4, 4, 184, 88, 28); context.fill();
-  context.strokeStyle = '#f8f6ef'; context.lineWidth = 4; context.stroke();
-  context.fillStyle = '#f8f6ef'; context.font = '700 54px Arial, sans-serif'; context.textAlign = 'center'; context.textBaseline = 'middle'; context.fillText(text, 96, 50);
-  const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; texture.needsUpdate = true; return texture;
-}
-
 function SceneLabel({ text, kind, selected = false, position }: { text: string; kind: 'dimension' | 'area'; selected?: boolean; position: [number, number, number] }) {
   const spriteRef = useRef<THREE.Sprite | null>(null);
   const worldPosition = useRef(new THREE.Vector3());
@@ -295,14 +254,7 @@ function SceneLabel({ text, kind, selected = false, position }: { text: string; 
   useFrame(({ camera: activeCamera, size: activeSize }) => {
     const sprite = spriteRef.current;
     if (!sprite) return;
-    let worldUnitsPerPixel = 0;
-    if (activeCamera instanceof THREE.PerspectiveCamera) {
-      const distance = activeCamera.position.distanceTo(sprite.getWorldPosition(worldPosition.current));
-      worldUnitsPerPixel = (2 * distance * Math.tan(THREE.MathUtils.degToRad(activeCamera.fov / 2))) / Math.max(activeSize.height, 1);
-    } else if (activeCamera instanceof THREE.OrthographicCamera) {
-      worldUnitsPerPixel = (activeCamera.top - activeCamera.bottom) / (Math.max(activeCamera.zoom, 1e-6) * Math.max(activeSize.height, 1));
-    }
-    const height = worldUnitsPerPixel * 19;
+    const height = worldUnitsPerPixel(activeCamera, activeSize.height, sprite.getWorldPosition(worldPosition.current)) * 19;
     const width = height * (texture.image.width / texture.image.height);
     if (Math.abs(sprite.scale.x - width) > 1e-4 || Math.abs(sprite.scale.y - height) > 1e-4) sprite.scale.set(width, height, 1);
   });
@@ -485,9 +437,6 @@ function PersonObject({ person, scene, maxPickWorldSize }: { person: ProjectScen
   const headRadius = Math.min(radius * 0.38, height * 0.085);
   const legLength = height * 0.31;
   const legRadius = radius * 0.2;
-  const appendTexture = useMemo(() => selected && onAppendPerson ? createActionTexture('+1') : null, [onAppendPerson, selected]);
-  const appendMaterial = useMemo(() => appendTexture ? new THREE.SpriteMaterial({ map: appendTexture, transparent: true, depthWrite: false, toneMapped: false }) : null, [appendTexture]);
-  useEffect(() => () => { appendMaterial?.dispose(); appendTexture?.dispose(); }, [appendMaterial, appendTexture]);
   return <group position={[person.position.x + delta.x, 0, person.position.z + delta.z]} rotation={[0, person.yawRadians, 0]} {...handlers}>
     <ScreenPickTarget position={[0, height * 0.55, 0]} maxWorldSize={maxPickWorldSize} />
     {selected && <>
@@ -502,16 +451,7 @@ function PersonObject({ person, scene, maxPickWorldSize }: { person: ProjectScen
     </group>)}
     <mesh position={[0, height * 0.88, radius * 0.025]}><sphereGeometry args={[headRadius, 16, 12]} /><meshStandardMaterial color={palette.dark} /></mesh>
     <mesh position={[0, height * 0.61, radius * 0.455]}><boxGeometry args={[radius * 0.38, height * 0.035, radius * 0.025]} /><meshStandardMaterial color={palette.green} /></mesh>
-    {selected && onAppendPerson && appendMaterial && <group position={[0, 0.015, -scene.simulation.spacingMeters]}
-      onPointerDown={(event) => { event.stopPropagation(); event.nativeEvent.stopImmediatePropagation(); }}
-      onPointerMove={(event) => { event.stopPropagation(); event.nativeEvent.stopImmediatePropagation(); }}
-      onPointerUp={(event) => { event.stopPropagation(); event.nativeEvent.stopImmediatePropagation(); }}
-      onPointerCancel={(event) => { event.stopPropagation(); event.nativeEvent.stopImmediatePropagation(); }}
-      onLostPointerCapture={(event) => { event.stopPropagation(); event.nativeEvent.stopImmediatePropagation(); }}
-      onClick={(event) => { event.stopPropagation(); onAppendPerson(person.id); }}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]}><circleGeometry args={[0.2, 24]} /><meshBasicMaterial color={palette.dark} /></mesh>
-      <sprite position={[0, 0.055, 0]} scale={[0.34, 0.17, 1]} raycast={() => null}><primitive object={appendMaterial} attach="material" /></sprite>
-    </group>}
+    {selected && onAppendPerson && <AppendPersonButton spacingMeters={scene.simulation.spacingMeters} heightMeters={height} onAppend={() => onAppendPerson(person.id)} />}
   </group>;
 }
 
@@ -818,7 +758,7 @@ function SceneContents({
         suppressedClickPointerIds.current.delete(event.pointerId);
         stop(event);
         select(entity);
-        if (!draggable || interactionMode === 'navigate') return;
+        if (!draggable || interactionMode === 'navigate' || tool === 'belt') return;
         // OrbitControls listens on this same DOM target after R3F. Keep a drag
         // pointer out of its pointer tracking so cancel has no unmatched release.
         event.nativeEvent.stopImmediatePropagation();
@@ -859,7 +799,7 @@ function SceneContents({
       onLostPointerCapture: (event: ScenePointerEvent) => finish(event, false),
       onClick: (event: ThreeEvent<MouseEvent>) => event.stopPropagation(),
     };
-  }, [onMoveEntity, select]);
+  }, [gridStep, interactionMode, onMoveEntity, select, tool]);
   const perimeterHandlers = useCallback((id: string, original: PointXZ) => {
     const positionOnPlane = (event: ScenePointerEvent): PointXZ | null => {
       const { origin, direction } = event.ray;
@@ -972,14 +912,7 @@ function SceneContents({
     for (const target of pickTargets.current) {
       const sprite = target.sprite;
       if (!sprite) continue;
-      let worldUnitsPerPixel = 0;
-      if (camera instanceof THREE.PerspectiveCamera) {
-        const distance = camera.position.distanceTo(sprite.getWorldPosition(target.worldPosition));
-        worldUnitsPerPixel = (2 * distance * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / Math.max(size.height, 1);
-      } else if (camera instanceof THREE.OrthographicCamera) {
-        worldUnitsPerPixel = (camera.top - camera.bottom) / (Math.max(camera.zoom, 1e-6) * Math.max(size.height, 1));
-      }
-      const worldSize = Math.min(44 * worldUnitsPerPixel, target.maxWorldSize);
+      const worldSize = Math.min(44 * worldUnitsPerPixel(camera, size.height, sprite.getWorldPosition(target.worldPosition)), target.maxWorldSize);
       if (Math.abs(sprite.scale.x - worldSize) > 1e-4 || Math.abs(sprite.scale.y - worldSize) > 1e-4) sprite.scale.set(worldSize, worldSize, 1);
     }
   });
@@ -1011,7 +944,7 @@ function SceneContents({
     {placementPreview && <PlacementPreview preview={placementPreview} scene={scene} />}
     {draftArea && <DraftArea vertices={draftArea} />}{rectangleDraft && <DraftArea vertices={rectangleDraft} />}
     {draftBelt && selectedScenePosts.has(draftBelt.fromPostId) && selectedScenePosts.has(draftBelt.toPostId) && <DraftBelt from={selectedScenePosts.get(draftBelt.fromPostId)!} to={selectedScenePosts.get(draftBelt.toPostId)!} />}
-    <ViewControls view={view ?? 'perspective'} center={center} width={width} depth={depth} wallHeight={scene.environment.wallHeightMeters} disabled={dragging || interactionMode === 'edit' && false} controlsRef={controlsRef} cameraAction={cameraAction} selectedPosition={selectedPosition} />
+    <ViewControls view={view ?? 'perspective'} center={center} width={width} depth={depth} wallHeight={scene.environment.wallHeightMeters} disabled={dragging} controlsRef={controlsRef} cameraAction={cameraAction} selectedPosition={selectedPosition} />
   </SceneInteractionContext.Provider>;
 }
 

@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, readApiError } from "../../shared/http";
 import type { ProjectSummary, ProjectsResponse } from "../../shared/contracts";
 import type { ProjectScene } from "@testafila/core/contracts/project";
 import { BrandLogo } from "../../shared/brand-logo";
 import { AppNav } from "../../shared/app-nav";
 import { SettingsPanel, type GridStep, type NavigationMode } from "../settings/settings-panel";
+import { defaultEditorPreferences, readEditorPreferences, saveEditorPreferences } from "../../shared/editor-preferences";
 import { generateSceneThumbnailSvg } from "./scene-thumbnail";
 import {
   Plus,
@@ -36,8 +37,8 @@ function ProjectThumbnail({ projectId }: { projectId: string }) {
         const res = await apiFetch(`/api/projects/${encodeURIComponent(projectId)}`);
         if (!res.ok) throw new Error();
         const data = await res.json();
-        if (active && data?.project?.scene) {
-          const generated = generateSceneThumbnailSvg(data.project.scene as ProjectScene, 300, 194);
+        if (active && data?.scene) {
+          const generated = generateSceneThumbnailSvg(data.scene as ProjectScene, 300, 194);
           setSvg(generated);
         }
       } catch {
@@ -58,37 +59,48 @@ function ProjectThumbnail({ projectId }: { projectId: string }) {
     return (
       <div
         className="project-preview project-preview-svg"
+        role="img"
         dangerouslySetInnerHTML={{ __html: svg }}
-        aria-label="Miniatura métrica da cena"
+        aria-label="Prévia da planta"
       />
     );
   }
 
   return (
-    <div className="project-preview" aria-label="Prévia simplificada">
-      <span className="preview-label">PRÉVIA MÉTRICA</span>
+    <div className="project-preview">
+      <span className="preview-label">PRÉVIA INDISPONÍVEL</span>
     </div>
   );
 }
 
 export function Dashboard() {
   const searchParams = useSearchParams();
-  const showSettingsParam = searchParams.get("settings") === "1";
+  const router = useRouter();
+  const settingsOpen = searchParams.get("settings") === "1";
 
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(showSettingsParam);
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
 
-  const [gridStep, setGridStep] = useState<GridStep>(0.25);
-  const [navigationMode, setNavigationMode] = useState<NavigationMode>("navigate");
+  const [gridStep, setGridStep] = useState<GridStep>(defaultEditorPreferences.gridStep);
+  const [navigationMode, setNavigationMode] = useState<NavigationMode>(defaultEditorPreferences.navigationMode);
 
   useEffect(() => {
-    if (showSettingsParam) {
-      setSettingsOpen(true);
-    }
-  }, [showSettingsParam]);
+    const preferences = readEditorPreferences();
+    setGridStep(preferences.gridStep);
+    setNavigationMode(preferences.navigationMode);
+  }, []);
+
+  function changeGridStep(step: GridStep) {
+    setGridStep(step);
+    saveEditorPreferences({ gridStep: step });
+  }
+
+  function changeNavigationMode(mode: NavigationMode) {
+    setNavigationMode(mode);
+    saveEditorPreferences({ navigationMode: mode });
+  }
 
   const loadProjects = useCallback(async () => {
     setLoading(true);
@@ -134,7 +146,7 @@ export function Dashboard() {
           <button
             type="button"
             className="button-quiet header-settings-btn"
-            onClick={() => setSettingsOpen((prev) => !prev)}
+            onClick={() => router.replace(settingsOpen ? "/dashboard" : "/dashboard?settings=1", { scroll: false })}
             aria-label="Abrir configurações de visualização"
             title="Configurações"
           >
@@ -150,9 +162,9 @@ export function Dashboard() {
           <SettingsPanel
             gridStep={gridStep}
             navigationMode={navigationMode}
-            onGridStepChange={setGridStep}
-            onNavigationModeChange={setNavigationMode}
-            onClose={() => setSettingsOpen(false)}
+            onGridStepChange={changeGridStep}
+            onNavigationModeChange={changeNavigationMode}
+            onClose={() => router.replace("/dashboard", { scroll: false })}
           />
         </div>
       )}
@@ -205,7 +217,7 @@ export function Dashboard() {
           <div className="project-grid" aria-label="Projetos salvos">
             {projects.map((project, index) => (
               <article className="project-card" key={project.id} style={{ "--item-delay": `${index * 55}ms` } as React.CSSProperties}>
-                <ProjectThumbnail projectId={project.id} />
+                <ProjectThumbnail key={project.updatedAt} projectId={project.id} />
                 <div className="project-card-info">
                   <div>
                     <h2>{project.name}</h2>

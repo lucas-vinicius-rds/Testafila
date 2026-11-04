@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   GearSix,
   GridFour,
@@ -63,7 +62,7 @@ export function SettingsPanel({ gridStep, navigationMode, onGridStepChange, onNa
             </button>
           ))}
         </div>
-        <p className="settings-hint">O passo da grade é aplicado na visualização. Não altera geometrias já salvas.</p>
+        <p className="settings-hint">Vale para a grade e o encaixe no editor. Não altera o que já foi salvo.</p>
       </fieldset>
 
       <fieldset className="settings-group">
@@ -91,7 +90,7 @@ export function SettingsPanel({ gridStep, navigationMode, onGridStepChange, onNa
             Editar
           </button>
         </div>
-        <p className="settings-hint">Navegar permite mover a câmera livremente. Editar ativa a seleção e posicionamento de objetos.</p>
+        <p className="settings-hint">Modo em que o editor abre. Navegar move a câmera; Editar coloca e arrasta itens.</p>
       </fieldset>
     </section>
   );
