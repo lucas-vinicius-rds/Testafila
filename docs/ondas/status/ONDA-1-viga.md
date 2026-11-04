@@ -4,10 +4,15 @@
 Contratos: [ONDA-1-viga-contratos.md](ONDA-1-viga-contratos.md); nenhum tipo mudou depois da
 publicação.
 
-**Ressalva do item 11:** a leitura migrada depende de `getProject`, em `projects.service.ts`.
-A alteração é do Codex e estava **sem commit** quando a testei. Ela foi compilada do working
-tree dele. A porta 3001 segue em v1 até o `next build` da Onda 3, como combinado; o caminho
-novo nunca rodou em produção.
+**Item 11, leitura pela API:** repetida sobre o commit `c90843b` do Codex, extraído do Git e
+compilado à parte, numa cópia do banco, na porta 3120: **9 de 9, leitura migrada 21 de 21**,
+sem regravar. Essa é a prova válida. A rodada anterior usou o working tree dele, ainda sem
+commit, e não guardei aquele conteúdo: só o `diff --stat` da época, com as mesmas 11 linhas (6
+inseridas, 5 removidas). É compatível, mas **não prova que a versão era idêntica**. O arquivo
+não mudou de `c90843b` até o HEAD.
+
+A porta 3001 segue em v1 até o `next build` da Onda 3, como combinado; o caminho novo nunca
+rodou em produção.
 
 ## Feito, por item
 
@@ -88,7 +93,6 @@ Três testes em `queue.test.ts` descreviam o comportamento substituído:
 
 **Fora do meu escopo**
 
-- Codex: comitar `getProject`, `schema_version` e os testes, em edição agora.
 - Vitral: usar `getQueueMode`, oferecer conversão, usar `area:rotate`, tratar o arco no arraste.
   O `sourceId` de `person:append` é ignorado, e `queue-editor.tsx` ainda o envia.
 - Onda 3: `next build` e reinício juntos. Antes disso, reiniciar a 3001 quebra o editor.
