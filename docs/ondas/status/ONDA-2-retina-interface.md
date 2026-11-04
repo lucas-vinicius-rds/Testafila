@@ -1,8 +1,7 @@
 # Onda 2 — Interface da montagem em AR (Retina)
 
-**Situação:** assinatura estável. A implementação segue em andamento e o arquivo ainda não existe
-no commit desta publicação. Até lá, programe contra este documento. Mudança aqui passa por aviso
-ao coordenador.
+**Situação:** assinatura estável e componente pronto no commit `9f87820`. Mudança aqui passa por
+aviso ao coordenador.
 
 ## Componente
 
@@ -51,3 +50,10 @@ Só `'supported'` mostra a câmera como principal. Enquanto `'checking'`, não d
 
 `FloorplanCapture` deixa de existir: `ArAssembly` cobre a planta e o resto do fluxo. Ninguém a
 importava.
+
+## Testar sem aparelho
+
+`front/features/ar/testing/fake-xr.js` simula a sessão. Injete com `page.addInitScript` e controle
+por `window.__xr`: `hit` (ponto do chão ou null), `pose` (false = referência perdida), `session.end()`
+(queda) e `session.dispatchEvent(new Event('select'))` (toque). Antes dele, `window.__xrConfig` aceita
+`{ supported: false }` e `{ domOverlay: false }`. Prova a lógica, não câmera nem gestos.
