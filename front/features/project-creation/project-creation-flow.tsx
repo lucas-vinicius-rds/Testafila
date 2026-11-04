@@ -5,12 +5,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ProjectScene, SaveProjectInput } from "@testafila/core/contracts/project";
 import { apiFetch, readApiError } from "../../shared/http";
-import { confirmManualEnvironment, createEmptyProjectScene, createManualRectangle, getEnvironmentArea } from "../editor/project-scene";
+import { confirmManualEnvironment, createEmptyProjectScene, createManualRectangle, getEnvironmentArea, measurementSourceLabel } from "../editor/project-scene";
 import { QueueEditor } from "../editor/queue-editor";
 import { ScenePreview } from "../editor/scene-preview";
 import { BrandLogo } from "../../shared/brand-logo";
+import { Camera, Ruler } from "@phosphor-icons/react/dist/ssr";
+import { useArCapability } from "../ar/session/use-ar-capability";
+import { ArAssemblySlot } from "./ar-assembly-slot";
 
-type Stage = "measure" | "queue" | "name";
+type Stage = "entry" | "camera" | "measure" | "queue" | "name";
 type Dimensions = { width: number; depth: number };
 
 function parseMeters(value: string): number | null {
@@ -26,7 +29,7 @@ function formatMeters(value: number): string {
 export function ProjectCreationFlow() {
   const router = useRouter();
   const [scene, setScene] = useState<ProjectScene>(createEmptyProjectScene);
-  const [stage, setStage] = useState<Stage>("measure");
+  const [stage, setStage] = useState<Stage>("entry");
   const [editorMounted, setEditorMounted] = useState(false);
   const [editorGeneration, setEditorGeneration] = useState(0);
   const [appliedDimensions, setAppliedDimensions] = useState<Dimensions | null>(null);
@@ -36,6 +39,8 @@ export function ProjectCreationFlow() {
   const [geometryError, setGeometryError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
+  const { status: arStatus } = useArCapability();
+  const cameraAvailable = arStatus === "supported";
 
   function openCanvas() {
     const width = parseMeters(widthInput);
@@ -56,6 +61,14 @@ export function ProjectCreationFlow() {
     } catch (cause) {
       setGeometryError(cause instanceof Error ? cause.message : "Confira as medidas informadas.");
     }
+  }
+
+  function openCameraResult(nextScene: ProjectScene) {
+    setScene(nextScene);
+    setAppliedDimensions(null);
+    setEditorGeneration((generation) => generation + 1);
+    setEditorMounted(true);
+    setStage("queue");
   }
 
   function handleSceneChange(nextScene: ProjectScene) {
@@ -92,29 +105,46 @@ export function ProjectCreationFlow() {
   }
 
   return <main className={stage === "queue" ? "project-shell editor-viewport" : "project-shell creation-shell"}>
-    <header className="project-header"><BrandLogo href="/dashboard" className="dashboard-wordmark" /><span className="project-header-label">NOVA FILA</span><Link className="button-quiet" href="/dashboard">Cancelar</Link></header>
+    <header className="project-header"><BrandLogo href="/dashboard" className="dashboard-wordmark" /><span className="project-header-label">NOVA FILA</span>{stage !== "camera" && <Link className="button-quiet" href="/dashboard">Cancelar</Link>}</header>
     <div className="project-flow-content creation-content">
+      {stage === "entry" && <section className="creation-measure-stage creation-entry-stage" aria-labelledby="entry-title">
+        <h1 id="entry-title">Como quer criar a planta?</h1>
+        <div className="creation-entry-options">
+          <button className={cameraAvailable ? "button-primary" : "button-secondary"} type="button" disabled={!cameraAvailable} onClick={() => setStage("camera")}>
+            <Camera size={20} weight="bold" aria-hidden="true" /><span>Medir com a câmera</span>
+          </button>
+          {arStatus !== "checking" && !cameraAvailable && <p className="creation-entry-note">A medição pela câmera não está disponível neste aparelho</p>}
+          <button className={cameraAvailable ? "button-secondary" : "button-primary"} type="button" onClick={() => setStage("measure")}>
+            <Ruler size={20} weight="bold" aria-hidden="true" /><span>Digitar medidas</span>
+          </button>
+        </div>
+      </section>}
+
+      {stage === "camera" && <section className="creation-camera-stage" aria-label="Montagem pela câmera">
+        <ArAssemblySlot onComplete={openCameraResult} onUseTypedMeasures={() => setStage("measure")} onCancel={() => setStage("entry")} />
+      </section>}
+
       {stage === "measure" && <section className="creation-measure-stage" aria-labelledby="measure-title">
-        <h1 id="measure-title">Defina a planta pelas medidas</h1>
-        <p>Informe as dimensões medidas no local. A câmera não mede o ambiente nesta etapa.</p>
+        <h1 id="measure-title">Digite as medidas do local</h1>
+        <p>Use as medidas tiradas no local. Depois você monta a fila sobre a planta.</p>
         <div className="measure-fields creation-dimensions">
           <label>Largura<input type="text" inputMode="decimal" value={widthInput} onChange={(event) => setWidthInput(event.target.value)} aria-label="Largura medida em metros" /><span>m</span></label>
           <label>Profundidade<input type="text" inputMode="decimal" value={depthInput} onChange={(event) => setDepthInput(event.target.value)} aria-label="Profundidade medida em metros" /><span>m</span></label>
         </div>
-        <p className="measurement-note">Planta manual. Confira as medidas antes de montar a fila.</p>
+        <p className="measurement-note">Confira as medidas antes de montar a fila.</p>
         {geometryError && <p className="geometry-error" role="alert">{geometryError}</p>}
-        <div className="stage-footer"><Link className="button-quiet" href="/dashboard">Voltar</Link><button className="button-primary" type="button" onClick={openCanvas}>{appliedDimensions ? "Abrir canvas" : "Montar no canvas"}</button></div>
+        <div className="stage-footer"><button className="button-quiet" type="button" onClick={() => setStage("entry")}>Voltar</button><button className="button-primary" type="button" onClick={openCanvas}>{appliedDimensions ? "Abrir canvas" : "Montar no canvas"}</button></div>
       </section>}
 
       {editorMounted && <div hidden={stage !== "queue"} className="creation-editor-stage">
         <QueueEditor key={`create:${editorGeneration}`} initialScene={scene} mode="create" onSceneChange={handleSceneChange}
-          onBack={() => setStage("measure")} onContinue={(nextScene) => { setScene(nextScene); setStage("name"); }} />
+          onBack={scene.environment.measurement.source === "manual" ? () => setStage("measure") : undefined} onContinue={(nextScene) => { setScene(nextScene); setStage("name"); }} />
       </div>}
 
       {stage === "name" && <section className="creation-save-stage" aria-labelledby="save-title">
         <div className="creation-save-controls"><h1 id="save-title">Nomeie e salve a fila</h1>
           <label htmlFor="project-name">Nome do projeto</label><input id="project-name" name="projectName" maxLength={100} value={projectName} onChange={(event) => { setProjectName(event.target.value); setSaveError(""); }} placeholder="Ex.: Salão principal" />
-          <p>{formatMeters(getEnvironmentArea(scene.environment))} m² · planta manual · {scene.posts.length} postes · {scene.people.length} pessoas</p>
+          <p>{formatMeters(getEnvironmentArea(scene.environment))} m² · {measurementSourceLabel(scene.environment)} · {scene.posts.length} postes · {scene.people.length} pessoas</p>
           {saveError && <p className="save-error" role="alert">{saveError}</p>}
           <button className="button-primary save-button" type="button" onClick={() => void saveProject()} disabled={saving || !projectName.trim()}>{saving ? "Salvando…" : "Salvar projeto"}</button>
           <button className="button-quiet" type="button" onClick={() => setStage("queue")}>Voltar ao canvas</button>

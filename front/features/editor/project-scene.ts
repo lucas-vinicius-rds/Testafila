@@ -12,6 +12,12 @@ import type { Environment, PointXZ, ProjectScene, ValidationResult, Vertex } fro
 
 export { getEnvironmentArea, getEnvironmentPerimeterLength };
 
+export function measurementSourceLabel(environment: Environment): string {
+  const { source } = environment.measurement;
+  if (source === "webxr") return "Medida com a câmera";
+  return source === "calibrated" ? "Planta calibrada" : "Medidas digitadas";
+}
+
 export function createEmptyProjectScene(): ProjectScene {
   const recordedAt = new Date().toISOString();
   return {

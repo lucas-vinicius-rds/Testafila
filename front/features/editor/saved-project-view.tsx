@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import type { SavedProject } from "@testafila/core/contracts/project";
-import { validateManualEnvironment, getEnvironmentArea, getEnvironmentPerimeterLength } from "./project-scene";
+import { validateManualEnvironment, getEnvironmentArea, getEnvironmentPerimeterLength, measurementSourceLabel } from "./project-scene";
 import { apiFetch, readApiError } from "../../shared/http";
 import { ScenePreview } from "./scene-preview";
 import { BrandLogo } from "../../shared/brand-logo";
+import { useArCapability } from "../ar/session/use-ar-capability";
 
 function formatMeters(value: number): string {
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value);
@@ -26,6 +27,7 @@ export function SavedProjectView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [view, setView] = useState<"top" | "perspective">("perspective");
+  const { status: arStatus } = useArCapability();
 
   const loadProject = useCallback(async () => {
     setLoading(true);
@@ -67,9 +69,7 @@ export function SavedProjectView() {
 
   const environment = project.scene.environment;
   const environmentIsValid = validation?.valid === true;
-  const sourceLabel = environment.measurement.source === "manual"
-    ? "Medição manual"
-    : environment.measurement.source === "calibrated" ? "Planta calibrada" : "Sessão WebXR";
+  const sourceLabel = measurementSourceLabel(environment);
 
   return (
     <main className="project-shell">
@@ -87,7 +87,7 @@ export function SavedProjectView() {
           </div>
           <div className="saved-project-top-actions">
             <Link className="button-primary" href={`/projects/${encodeURIComponent(project.id)}/edit`}>Editar fila</Link>
-            <Link className="button-secondary" href={`/projects/${encodeURIComponent(project.id)}/ar`}>Ver em AR</Link>
+            {arStatus === "supported" && <Link className="button-secondary" href={`/projects/${encodeURIComponent(project.id)}/ar`}>Ver em AR</Link>}
             <div className="view-switch" role="group" aria-label="Ângulo da visualização">
               <button type="button" className={view === "top" ? "selected" : ""} onClick={() => setView("top")}>Planta</button>
               <button type="button" className={view === "perspective" ? "selected" : ""} onClick={() => setView("perspective")}>Perspectiva</button>
@@ -110,7 +110,7 @@ export function SavedProjectView() {
           ? "Nenhuma conferência de medida foi registrada. Sem uma segunda medida para comparar, não há erro calculado."
           : `${environment.measurement.checks.length} ${environment.measurement.checks.length === 1 ? "conferência de medida registrada" : "conferências de medida registradas"}.`}</p>
         <div className="saved-project-actions"><Link className="button-secondary" href="/dashboard">Voltar à galeria</Link>
-          <span>AR exige HTTPS, aparelho compatível e realinhamento nesta sessão.</span></div>
+          {arStatus === "supported" && <span>AR pede realinhamento a cada sessão.</span>}</div>
       </section>
     </main>
   );

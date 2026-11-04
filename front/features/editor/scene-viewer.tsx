@@ -427,11 +427,41 @@ function RouteObject({ route }: { route: ProjectScene['routes'][number] }) {
   </group>;
 }
 
+// Mesma regra do domínio, para o arraste mostrar onde a pessoa vai parar:
+// a primeira leva a fila; as demais ficam à distância do espaçamento da anterior.
+function personPreviewDelta(person: ProjectScene['people'][number], scene: ProjectScene, previous: ProjectScene['people'][number] | undefined, preview: DragPreview | null): PointXZ {
+  if (preview?.selection.kind !== 'person') return { x: 0, z: 0 };
+  if (preview.selection.id === scene.queue.personIds[0]) return preview.delta;
+  if (preview.selection.id !== person.id) return { x: 0, z: 0 };
+  if (!previous) return preview.delta;
+  const dx = person.position.x + preview.delta.x - previous.position.x;
+  const dz = person.position.z + preview.delta.z - previous.position.z;
+  const distance = Math.hypot(dx, dz);
+  if (distance < 1e-6) return { x: 0, z: 0 };
+  const spacing = scene.simulation.spacingMeters;
+  return { x: previous.position.x + (dx / distance) * spacing - person.position.x, z: previous.position.z + (dz / distance) * spacing - person.position.z };
+}
+
+function ChainGuide({ scene }: { scene: ProjectScene }) {
+  const { selection } = useSceneInteraction();
+  if (selection?.kind !== 'person') return null;
+  const index = scene.queue.personIds.indexOf(selection.id);
+  if (index < 1) return null;
+  const previous = scene.people.find((item) => item.id === scene.queue.personIds[index - 1]);
+  if (!previous) return null;
+  const radius = scene.simulation.spacingMeters;
+  return <mesh position={[previous.position.x, 0.03, previous.position.z]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
+    <ringGeometry args={[radius - 0.012, radius + 0.012, 64]} /><meshBasicMaterial color={palette.green} transparent opacity={0.6} side={THREE.DoubleSide} depthWrite={false} />
+  </mesh>;
+}
+
 function PersonObject({ person, scene, maxPickWorldSize }: { person: ProjectScene['people'][number]; scene: ProjectScene; maxPickWorldSize: number }) {
   const { selection, onAppendPerson, preview } = useSceneInteraction();
   const handlers = useEntityHandlers({ kind: 'person', id: person.id }, true);
   const selected = selection?.kind === 'person' && selection.id === person.id;
-  const delta = preview?.selection.kind === 'person' && preview.selection.id === person.id ? preview.delta : { x: 0, z: 0 };
+  const chainIndex = scene.queue.personIds.indexOf(person.id);
+  const previous = chainIndex > 0 ? scene.people.find((item) => item.id === scene.queue.personIds[chainIndex - 1]) : undefined;
+  const delta = personPreviewDelta(person, scene, previous, preview);
   const height = scene.simulation.personHeightMeters;
   const radius = scene.simulation.personRadiusMeters;
   const headRadius = Math.min(radius * 0.38, height * 0.085);
@@ -505,6 +535,7 @@ function QueueObjects({ scene }: { scene: ProjectScene }) {
     {scene.posts.map((post) => <PostObject key={post.id} post={post} maxPickWorldSize={pickSizes.posts.get(post.id) ?? 0.4} />)}
     {scene.belts.map((belt) => { const from = posts.get(belt.fromPostId); const to = posts.get(belt.toPostId); return from && to ? <BeltObject key={belt.id} belt={belt} from={from} to={to} /> : null; })}
     {scene.routes.map((route) => <RouteObject key={route.id} route={route} />)}
+    <ChainGuide scene={scene} />
     {scene.people.map((person) => <PersonObject key={person.id} person={person} scene={scene} maxPickWorldSize={pickSizes.people.get(person.id) ?? 0.4} />)}
   </group>;
 }
@@ -525,7 +556,12 @@ function PerimeterHandles({ scene }: { scene: ProjectScene }) {
 function ViewControls({ view, center, width, depth, wallHeight, disabled, controlsRef, cameraAction, selectedPosition }: { view: SceneViewerProps['view']; center: [number, number, number]; width: number; depth: number; wallHeight: number; disabled: boolean; controlsRef: { current: OrbitControlsImpl | null }; cameraAction?: SceneViewerProps['cameraAction']; selectedPosition?: PointXZ | null }) {
   const { camera, size, invalidate } = useThree();
   const lastCameraActionId = useRef<number | null>(null);
+  const lastFraming = useRef<string | null>(null);
   useEffect(() => {
+    // Só a altura mudou (bandeja do mobile): mantém a vista que a pessoa escolheu.
+    const framing = [view, ...center, width, depth, wallHeight, size.width].join('|');
+    if (lastFraming.current === framing) return;
+    lastFraming.current = framing;
     const aspect = Math.max(0.2, size.width / Math.max(size.height, 1));
     const verticalHalfFov = THREE.MathUtils.degToRad((camera instanceof THREE.PerspectiveCamera ? camera.fov : 42) / 2);
     const horizontalHalfFov = Math.atan(Math.tan(verticalHalfFov) * aspect);
