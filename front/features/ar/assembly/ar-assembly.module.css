@@ -37,3 +37,4 @@
 .quiet { border: 0; background: transparent; color: var(--muted, #606963); }
 .primary:disabled, .secondary:disabled, .wide:disabled { cursor: not-allowed; opacity: .48; }
 .primary:focus-visible, .secondary:focus-visible, .wide:focus-visible, .danger:focus-visible, .quiet:focus-visible, .tool:focus-visible, .toolActive:focus-visible { outline: none; box-shadow: var(--focus, 0 0 0 3px rgba(33, 75, 64, .24)); }
+.choice { flex: 1 1 0; min-height: 56px; border: 1px solid var(--green, #214b40); border-radius: 2px; background: var(--green, #214b40); color: var(--on-green, #ffffff); font-size: 15px; font-weight: 600; cursor: pointer; }

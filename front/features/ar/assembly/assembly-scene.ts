@@ -5,17 +5,25 @@ import { projectColors } from '../scene/project-objects.ts';
 import { createSceneLayers, type SceneLayersView } from '../scene/scene-layers.ts';
 import type { XrSessionRuntime } from '../session/xr-session.ts';
 import type { SessionAlignmentState } from './assembly-state.ts';
+import { createMeasureLabels, type Segment } from './measure-labels.ts';
 
 const FLOOR_LIFT_METERS = 0.012;
 const PREVIEW_LIFT_METERS = 0.012;
 
 export type AssemblyScene = XrSessionRuntime & Readonly<{
   sync: (view: SceneLayersView, alignment: SessionAlignmentState | null) => void;
-  /** Line from the last marked point to the reticle, in project coordinates. Allocates nothing. */
+  /** Line and live measure from the last marked point to the reticle, in project coordinates. */
   setPreview: (from: PointXZ | null, to: PointXZ | null) => void;
   highlightPosts: (ids: readonly string[]) => void;
   dispose: () => void;
 }>;
+
+function consecutive(points: readonly PointXZ[], closed: boolean): Segment[] {
+  const segments: Segment[] = [];
+  for (let index = 0; index + 1 < points.length; index += 1) segments.push([points[index], points[index + 1]]);
+  if (closed && points.length > 2) segments.push([points[points.length - 1], points[0]]);
+  return segments;
+}
 
 /** Same renderer setup as the routes that already ran on a phone. */
 export function createAssemblyScene(canvas: HTMLCanvasElement): AssemblyScene {
@@ -47,6 +55,7 @@ export function createAssemblyScene(canvas: HTMLCanvasElement): AssemblyScene {
   preview.frustumCulled = false;
   preview.visible = false;
   layers.root.add(preview);
+  const labels = createMeasureLabels(layers.root);
 
   const resize = () => {
     if (renderer.xr.isPresenting) return;
@@ -66,6 +75,7 @@ export function createAssemblyScene(canvas: HTMLCanvasElement): AssemblyScene {
     reticle,
     sync: (view, alignment) => {
       layers.sync(view);
+      labels.setSegments([...consecutive(view.scene?.environment.perimeter ?? [], true), ...consecutive(view.draft, false)]);
       layers.root.visible = alignment !== null;
       if (!alignment) return;
       const pose = projectRootPose(alignment.transform, alignment.floorY + FLOOR_LIFT_METERS);
@@ -74,6 +84,7 @@ export function createAssemblyScene(canvas: HTMLCanvasElement): AssemblyScene {
     },
     setPreview: (from, to) => {
       preview.visible = Boolean(from && to);
+      labels.setLive(from, to);
       if (!from || !to) return;
       previewPositions.setXYZ(0, from.x, PREVIEW_LIFT_METERS, from.z);
       previewPositions.setXYZ(1, to.x, PREVIEW_LIFT_METERS, to.z);
@@ -83,6 +94,7 @@ export function createAssemblyScene(canvas: HTMLCanvasElement): AssemblyScene {
     dispose: () => {
       window.removeEventListener('resize', resize);
       renderer.setAnimationLoop(null);
+      labels.dispose();
       layers.dispose();
       reticle.geometry.dispose();
       reticle.material.dispose();

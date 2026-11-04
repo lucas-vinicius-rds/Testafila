@@ -86,6 +86,7 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
   const selectHandlerRef = useRef<() => void>(() => undefined);
   const aimedPostRef = useRef<string | null>(null);
   const exitOpenRef = useRef(false);
+  const planChoiceRef = useRef(false);
 
   const capability = useArCapability();
   const [state, setState] = useState(() => createAssembly(initialScene));
@@ -96,6 +97,7 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
   const [tracking, setTracking] = useState<XrTracking>('inactive');
   const [exitOpen, setExitOpen] = useState(false);
   const [startFailure, setStartFailure] = useState<string | null>(null);
+  const [planChoice, setPlanChoice] = useState(false);
 
   const drawState = useCallback((next: AssemblyState) => {
     const highlightedPostIds = next.beltStartPostId ? [next.beltStartPostId] : [];
@@ -113,6 +115,11 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
     setExitOpen(open);
   }, []);
 
+  const showPlanChoice = useCallback((open: boolean) => {
+    planChoiceRef.current = open;
+    setPlanChoice(open);
+  }, []);
+
   const [xrSession] = useState(() => createXrSessionController({
     requireDomOverlay: true,
     getXr: () => navigator.xr,
@@ -124,6 +131,7 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
       // Only what belongs to the session goes away; the work stays for Continuar.
       commit(sessionEnded(stateRef.current));
       sceneRef.current?.setPreview(null, null);
+      showPlanChoice(false);
       setSessionActive(false);
     },
     onSelect: () => selectHandlerRef.current(),
@@ -176,7 +184,7 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
 
   const placeHere = useCallback(() => {
     const hit = xrSession.currentHit();
-    if (exitOpenRef.current || !hit || !canMarkCorner({ visible: xrSession.isVisible(), tracking: xrSession.tracking(), hit })) return;
+    if (exitOpenRef.current || planChoiceRef.current || !hit || !canMarkCorner({ visible: xrSession.isVisible(), tracking: xrSession.tracking(), hit })) return;
     commit(placeAtHit(stateRef.current, hit, createId));
   }, [commit, xrSession]);
 
@@ -207,6 +215,12 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
     xrSession.finish(true);
     onComplete(review.scene);
   }, [commit, onComplete, showExit, xrSession]);
+
+  const closeAndChoose = useCallback(() => {
+    const next = closePlan(stateRef.current, new Date().toISOString());
+    commit(next);
+    if (next.history) showPlanChoice(true);
+  }, [commit, showPlanChoice]);
 
   const discard = useCallback(() => {
     xrSession.finish(true);
@@ -280,7 +294,7 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
         </div>
         <div className={styles.row}>
           {state.step === 'corners'
-            ? <button type="button" className={styles.wide} disabled={state.corners.length < MIN_CORNERS_TO_CLOSE} onClick={() => commit(closePlan(stateRef.current, new Date().toISOString()))}>Fechar planta</button>
+            ? <button type="button" className={styles.wide} disabled={state.corners.length < MIN_CORNERS_TO_CLOSE} onClick={closeAndChoose}>Fechar planta</button>
             : state.step === 'areas'
               ? <button type="button" className={styles.secondary} disabled={state.areaDraft.length < MIN_CORNERS_TO_CLOSE} onClick={() => commit(closeArea(stateRef.current, createId))}>Fechar área</button>
               : previousStep && <button type="button" className={styles.secondary} onClick={() => commit(goToStep(stateRef.current, previousStep))}>Voltar</button>}
@@ -289,6 +303,23 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
             : <button type="button" className={styles.primary} onClick={finishAndReview}>Concluir</button>)}
         </div>
       </>}
+    </div>
+  </>;
+
+  const choicePanels = <>
+    <div className={styles.topBar}>
+      <div className={styles.heading}>
+        <p className={styles.step}>Planta medida</p>
+        <button type="button" className={styles.quiet} onClick={requestExit}>Sair</button>
+      </div>
+    </div>
+    <div className={styles.panel}>
+      <h2 className={styles.title}>Como quer montar a fila?</h2>
+      {scene && <p className={styles.summary}>{sceneSummary(scene)}</p>}
+      <div className={styles.row}>
+        <button type="button" className={styles.choice} onClick={() => showPlanChoice(false)}>Montar na câmera</button>
+        <button type="button" className={styles.choice} onClick={finishAndReview}>Montar no 3D</button>
+      </div>
     </div>
   </>;
 
@@ -312,6 +343,7 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
       ? <button type="button" className={styles.primary} onClick={onUseTypedMeasures}>Digitar medidas</button>
       : <button type="button" className={styles.primary} disabled={capability.status !== 'supported' || !sceneReady || starting} onClick={start}>{starting ? 'Abrindo a câmera…' : 'Começar a medir'}</button>}
     {startFailure && !unavailable && <button type="button" className={styles.secondary} onClick={start}>Tentar de novo</button>}
+    {!failure && <button type="button" className={styles.quiet} onClick={onUseTypedMeasures}>Digitar medidas</button>}
     <button type="button" className={styles.quiet} onClick={onCancel}>Cancelar</button>
   </div>;
 
@@ -321,7 +353,7 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
         <canvas ref={canvasRef} className={styles.canvas} />
       </div>
       <div ref={overlayRef} className={sessionActive && !exitOpen ? styles.overlayActive : styles.overlay}>
-        {exitOpen ? exitPanel : sessionActive ? livePanels : work ? recoveryPanel : introPanel}
+        {exitOpen ? exitPanel : sessionActive ? (planChoice ? choicePanels : livePanels) : work ? recoveryPanel : introPanel}
       </div>
     </section>
   );

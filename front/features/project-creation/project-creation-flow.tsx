@@ -9,7 +9,6 @@ import { confirmManualEnvironment, createEmptyProjectScene, createManualRectangl
 import { QueueEditor } from "../editor/queue-editor";
 import { ScenePreview } from "../editor/scene-preview";
 import { BrandLogo } from "../../shared/brand-logo";
-import { Camera, Ruler } from "@phosphor-icons/react/dist/ssr";
 import { useArCapability } from "../ar/session/use-ar-capability";
 import { ArAssemblySlot } from "./ar-assembly-slot";
 
@@ -44,6 +43,11 @@ export function ProjectCreationFlow() {
   const [saved, setSaved] = useState(false);
   // A montagem guarda o trabalho só em memória, então a etapa da câmera conta como não salva.
   const unsavedWork = !saved && (stage === "camera" || editorMounted);
+
+  // Criar nova fila vai direto para a câmera, ou para as medidas se ela não existir.
+  useEffect(() => {
+    if (stage === "entry" && arStatus !== "checking") setStage(cameraAvailable ? "camera" : "measure");
+  }, [arStatus, cameraAvailable, stage]);
 
   useEffect(() => {
     if (!unsavedWork) return;
@@ -118,33 +122,23 @@ export function ProjectCreationFlow() {
   return <main className={stage === "queue" ? "project-shell editor-viewport" : "project-shell creation-shell"}>
     <header className="project-header"><BrandLogo href="/dashboard" className="dashboard-wordmark" /><span className="project-header-label">NOVA FILA</span>{stage !== "camera" && <Link className="button-quiet" href="/dashboard">Cancelar</Link>}</header>
     <div className="project-flow-content creation-content">
-      {stage === "entry" && <section className="creation-measure-stage creation-entry-stage" aria-labelledby="entry-title">
-        <h1 id="entry-title">Como quer criar a planta?</h1>
-        <div className="creation-entry-options">
-          <button className={cameraAvailable ? "button-primary" : "button-secondary"} type="button" disabled={!cameraAvailable} onClick={() => setStage("camera")}>
-            <Camera size={20} weight="bold" aria-hidden="true" /><span>Medir com a câmera</span>
-          </button>
-          {arStatus !== "checking" && !cameraAvailable && <p className="creation-entry-note">A medição pela câmera não está disponível neste aparelho</p>}
-          <button className={cameraAvailable ? "button-secondary" : "button-primary"} type="button" onClick={() => setStage("measure")}>
-            <Ruler size={20} weight="bold" aria-hidden="true" /><span>Digitar medidas</span>
-          </button>
-        </div>
-      </section>}
+      {stage === "entry" && <div className="flow-loading" role="status">Preparando…</div>}
 
       {stage === "camera" && <section className="creation-camera-stage" aria-label="Montagem pela câmera">
-        <ArAssemblySlot onComplete={openCameraResult} onUseTypedMeasures={() => setStage("measure")} onCancel={() => setStage("entry")} />
+        <ArAssemblySlot onComplete={openCameraResult} onUseTypedMeasures={() => setStage("measure")} onCancel={() => router.push("/dashboard")} />
       </section>}
 
       {stage === "measure" && <section className="creation-measure-stage" aria-labelledby="measure-title">
         <h1 id="measure-title">Digite as medidas do local</h1>
         <p>Use as medidas tiradas no local. Depois você monta a fila sobre a planta.</p>
+        {arStatus !== "checking" && !cameraAvailable && <p className="measurement-note">A medição pela câmera não está disponível neste aparelho</p>}
         <div className="measure-fields creation-dimensions">
           <label>Largura<input type="text" inputMode="decimal" value={widthInput} onChange={(event) => setWidthInput(event.target.value)} aria-label="Largura medida em metros" /><span>m</span></label>
           <label>Profundidade<input type="text" inputMode="decimal" value={depthInput} onChange={(event) => setDepthInput(event.target.value)} aria-label="Profundidade medida em metros" /><span>m</span></label>
         </div>
         <p className="measurement-note">Confira as medidas antes de montar a fila.</p>
         {geometryError && <p className="geometry-error" role="alert">{geometryError}</p>}
-        <div className="stage-footer"><button className="button-quiet" type="button" onClick={() => setStage("entry")}>Voltar</button><button className="button-primary" type="button" onClick={openCanvas}>{appliedDimensions ? "Abrir canvas" : "Montar no canvas"}</button></div>
+        <div className="stage-footer">{cameraAvailable ? <button className="button-quiet" type="button" onClick={() => setStage("camera")}>Voltar</button> : <Link className="button-quiet" href="/dashboard">Voltar</Link>}<button className="button-primary" type="button" onClick={openCanvas}>{appliedDimensions ? "Abrir canvas" : "Montar no canvas"}</button></div>
       </section>}
 
       {editorMounted && <div hidden={stage !== "queue"} className="creation-editor-stage">
