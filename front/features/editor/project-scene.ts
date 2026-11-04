@@ -15,7 +15,7 @@ export { getEnvironmentArea, getEnvironmentPerimeterLength };
 export function createEmptyProjectScene(): ProjectScene {
   const recordedAt = new Date().toISOString();
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     units: "meters",
     coordinateSystem: "right-handed-y-up-xz-floor",
     environment: {
@@ -28,6 +28,7 @@ export function createEmptyProjectScene(): ProjectScene {
     posts: [],
     belts: [],
     routes: [],
+    queue: { personIds: [] },
     people: [],
     simulation: {
       spacingMeters: 0.8,
