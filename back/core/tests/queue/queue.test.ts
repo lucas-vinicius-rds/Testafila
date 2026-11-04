@@ -14,7 +14,7 @@ import type { ProjectScene, QueueRoute } from '../../contracts/project.ts';
 
 function createScene(): ProjectScene {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     units: 'meters',
     coordinateSystem: 'right-handed-y-up-xz-floor',
     environment: createRectangleEnvironment({ widthMeters: 10, depthMeters: 8 }),
@@ -22,6 +22,7 @@ function createScene(): ProjectScene {
     posts: [],
     belts: [],
     routes: [],
+    queue: { personIds: [] },
     people: [],
     simulation: {
       spacingMeters: 0.8,
@@ -143,7 +144,7 @@ describe('queue domain', () => {
     assert.equal(validateQueueScene(invalidScene).valid, false);
   });
 
-  it('adds a free person facing +Z at the requested position', () => {
+  it('adds the first person at the requested position and orientation', () => {
     const scene = createScene();
     const person = {
       id: 'new-free', routeId: null, distanceAlongRouteMeters: null,
@@ -153,7 +154,8 @@ describe('queue domain', () => {
     const result = applyQueueCommand(scene, { type: 'person:add', person });
 
     assert.equal(result.valid, true);
-    assert.deepEqual(result.scene.people, [{ ...person, yawRadians: 0 }]);
+    assert.deepEqual(result.scene.people, [person]);
+    assert.deepEqual(result.scene.queue.personIds, [person.id]);
     assert.deepEqual(scene.people, []);
     const routePerson = { ...person, routeId: bentRoute.id, distanceAlongRouteMeters: 0 };
     assert.equal(applyQueueCommand(scene, { type: 'person:add', person: routePerson }).valid, false);
@@ -180,12 +182,13 @@ describe('queue domain', () => {
     assert.equal(rotated.scene.people.find((person) => person.id === untouched.id), untouched);
   });
 
-  it('appends a free person behind source position using source yaw and configured spacing', () => {
+  it('appends behind the last person using its yaw and configured spacing', () => {
     const scene = createScene();
     scene.people = [{
       id: 'source', routeId: null, distanceAlongRouteMeters: null,
       position: { x: 4, z: 4 }, yawRadians: 0,
     }];
+    scene.queue = { personIds: ['source'] };
     const history = createQueueHistory(scene);
     const result = executeQueueCommand(history, { type: 'person:append', sourceId: 'source', id: 'appended' });
     const appended = result.history.present.people.find((person) => person.id === 'appended');
@@ -214,9 +217,11 @@ describe('queue domain', () => {
       id: 'source', routeId: null, distanceAlongRouteMeters: null,
       position: { x: 4, z: 4 }, yawRadians: 0,
     }];
+    scene.queue = { personIds: ['source'] };
     const result = applyQueueCommand(scene, { type: 'person:append', sourceId: 'source', id: 'colliding' });
 
     assert.equal(result.valid, false);
+    assert.match(result.errors.join(), /conflito/);
     assert.equal(result.scene, scene);
     assert.equal(scene.people.length, 1);
   });

@@ -1,22 +1,15 @@
 import type { ProjectScene } from '../../contracts/project.ts';
 
-type LegacyProjectScene = Omit<ProjectScene, 'schemaVersion' | 'postGroups'> & { schemaVersion: 1 };
+type ProjectSceneV1 = Omit<ProjectScene, 'schemaVersion' | 'queue'> & { schemaVersion: 1 };
 
-/** Converts the only historical persisted format into the canonical v2 scene. */
+/**
+ * Converte uma cena salva para a versão atual, sem mutar a entrada.
+ * Pessoas de cenas v1 ficam fora da cadeia: a conversão delas é explícita
+ * (`queue:convert-legacy`), nunca feita ao ler.
+ */
 export function migrateProjectScene(input: unknown): ProjectScene {
-  const scene = input as { schemaVersion?: unknown; posts?: unknown };
-  if (scene?.schemaVersion === 2) return scene as ProjectScene;
-  if (scene?.schemaVersion !== 1 || !Array.isArray(scene.posts)) {
-    throw new Error('Documento de cena incompatível');
-  }
-  const legacy = scene as unknown as LegacyProjectScene;
-  return {
-    ...legacy,
-    schemaVersion: 2,
-    postGroups: [{
-      id: 'legacy-post-group',
-      name: 'Conjunto existente',
-      postIds: legacy.posts.map((post) => post.id),
-    }],
-  };
+  const scene = input as { schemaVersion?: unknown } | null | undefined;
+  if (scene?.schemaVersion === 2) return input as ProjectScene;
+  if (scene?.schemaVersion !== 1) throw new Error('Documento de cena incompatível');
+  return { ...(input as ProjectSceneV1), schemaVersion: 2, queue: { personIds: [] } };
 }

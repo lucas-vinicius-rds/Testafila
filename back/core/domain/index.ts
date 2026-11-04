@@ -10,3 +10,4 @@ export * from './polygon.ts';
 export * from './footprint.ts';
 export * from './measurement.ts';
 export * from './environment.ts';
+export * from './measured-environment.ts';

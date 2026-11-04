@@ -6,6 +6,8 @@ export type QueueCommand =
   | { type: 'environment:confirm'; confirmedAt: string }
   | { type: 'area:add'; area: RestrictedArea }
   | { type: 'area:update'; area: RestrictedArea }
+  | { type: 'area:move'; id: EntityId; delta: PointXZ }
+  | { type: 'area:rotate'; id: EntityId; angleRadians: number }
   | { type: 'area:remove'; id: EntityId }
   | { type: 'post:add'; post: Stanchion }
   | { type: 'post:move'; id: EntityId; position: PointXZ }
@@ -20,7 +22,9 @@ export type QueueCommand =
   | { type: 'person:add'; person: PersonPlacement }
   | { type: 'person:move'; id: EntityId; position: PointXZ }
   | { type: 'person:rotate'; id: EntityId; yawRadians: number }
-  | { type: 'person:append'; sourceId: EntityId; id: EntityId }
+  // Sempre atrás da última pessoa da cadeia. sourceId é aceito e ignorado.
+  | { type: 'person:append'; id: EntityId; sourceId?: EntityId }
+  | { type: 'queue:convert-legacy' }
   | { type: 'people:clear'; routeId?: EntityId }
   | { type: 'simulation:spacing'; spacingMeters: number };
 
@@ -28,6 +32,7 @@ export interface QueueValidation { valid: boolean; errors: string[] }
 export interface QueueCommandResult extends QueueValidation { scene: ProjectScene }
 export interface QueueHistory { past: ProjectScene[]; present: ProjectScene; future: ProjectScene[] }
 export interface QueueHistoryResult extends QueueValidation { history: QueueHistory }
+export type QueueMode = 'empty' | 'chain' | 'legacy';
 export interface QueueStats { routeLengthMeters: number; peopleCount: number; capacity: number }
 
 /** API de back/core/domain/queue/index.ts:
@@ -38,5 +43,7 @@ export interface QueueStats { routeLengthMeters: number; peopleCount: number; ca
  * undoQueue(history: QueueHistory): QueueHistory
  * redoQueue(history: QueueHistory): QueueHistory
  * getQueueStats(scene: ProjectScene): QueueStats
+ * getQueueMode(scene: ProjectScene): QueueMode
+ * getChainPeople(scene: ProjectScene): PersonPlacement[]
  * Comando inválido devolve a instância original; nenhuma mutação.
  */

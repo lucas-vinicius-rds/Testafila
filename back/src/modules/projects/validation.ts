@@ -3,7 +3,8 @@ import type { ProjectScene, SaveProjectInput } from '../../../core/contracts/pro
 import { validateEnvironment } from '../../../core/domain/environment.ts';
 import { validateSimplePolygon } from '../../../core/domain/polygon.ts';
 import { validateMeasurementEvidence } from '../../../core/domain/measurement.ts';
-import { validateQueueScene } from '../../../core/domain/queue/index.ts';
+import { getQueueMode, validateQueueScene } from '../../../core/domain/queue/index.ts';
+import { migrateProjectScene } from '../../../core/domain/queue/migration.ts';
 import { AppError } from '../../common/types.ts';
 
 const id = z.string().trim().min(1).max(128);
@@ -16,19 +17,20 @@ const measurement = z.object({
 }).strict();
 const environment = z.object({ perimeter: z.array(vertex).min(3).max(500), wallHeightMeters: z.number().finite().positive().max(50), measurement, confirmedAt: z.string().datetime({ offset: true }).nullable() }).strict();
 const sceneSchema = z.object({
-  schemaVersion: z.literal(1), units: z.literal('meters'), coordinateSystem: z.literal('right-handed-y-up-xz-floor'),
+  schemaVersion: z.literal(2), units: z.literal('meters'), coordinateSystem: z.literal('right-handed-y-up-xz-floor'),
   environment,
   restrictedAreas: z.array(z.object({ id, name: z.string().trim().min(1).max(100), vertices: z.array(vertex).min(3).max(500) }).strict()).max(200),
   posts: z.array(z.object({ id, position: point, heightMeters: z.number().finite().positive().max(50), baseRadiusMeters: z.number().finite().positive().max(100) }).strict()).max(5000),
   belts: z.array(z.object({ id, fromPostId: id, toPostId: id, heightMeters: z.number().finite().positive().max(50) }).strict()).max(5000),
   routes: z.array(z.object({ id, points: z.array(vertex).min(2).max(5000) }).strict()).max(500),
+  queue: z.object({ personIds: z.array(id).max(10000) }).strict(),
   people: z.array(z.object({ id, routeId: id.nullable(), distanceAlongRouteMeters: z.number().finite().nonnegative().nullable(), position: point, yawRadians: z.number().finite() }).strict().refine(
     (person) => (person.routeId === null) === (person.distanceAlongRouteMeters === null),
     'Pessoa livre exige routeId e distanceAlongRouteMeters nulos juntos',
   )).max(10000),
   simulation: z.object({ spacingMeters: z.number().finite().positive(), personHeightMeters: z.number().finite().positive(), personRadiusMeters: z.number().finite().positive(), clearanceMeters: z.number().finite().nonnegative() }).strict(),
 }).strict();
-const saveSchema = z.object({ name: z.string().trim().min(1).max(100), scene: sceneSchema, expectedRevision: z.number().int().positive().nullable() }).strict();
+const saveSchema = z.object({ name: z.string().trim().min(1).max(100), scene: z.unknown(), expectedRevision: z.number().int().positive().nullable() }).strict();
 
 function bad(message: string): never { throw new AppError(400, 'BAD_REQUEST', message); }
 function assertUnique(ids: string[], label: string) {
@@ -42,11 +44,22 @@ export function validateSaveProjectInput(input: unknown, isCreation: boolean): S
     bad(isCreation ? 'expectedRevision deve ser null na criação' : 'expectedRevision deve ser inteiro positivo na atualização');
   }
   const scene = validateProjectScene(parsed.data.scene);
+  // v1 segue aceito na transição do front; v2 nova já nasce com a fila interligada.
+  const sentAsCurrent = (parsed.data.scene as { schemaVersion?: unknown }).schemaVersion === scene.schemaVersion;
+  if (isCreation && sentAsCurrent && getQueueMode(scene) === 'legacy') bad('Projeto novo não pode ter pessoas fora da fila');
   return { name: parsed.data.name, scene, expectedRevision: parsed.data.expectedRevision };
 }
 
+function migrateOrReject(input: unknown): ProjectScene {
+  try {
+    return migrateProjectScene(input);
+  } catch {
+    return bad('Cena inválida: schemaVersion');
+  }
+}
+
 export function validateProjectScene(input: unknown): ProjectScene {
-  const parsed = sceneSchema.safeParse(input);
+  const parsed = sceneSchema.safeParse(migrateOrReject(input));
   if (!parsed.success) bad(`Cena inválida: ${parsed.error.issues.map((issue) => issue.path.join('.')).slice(0, 8).join(', ')}`);
   const scene = parsed.data;
   const envResult = validateEnvironment(scene.environment);

@@ -1,4 +1,4 @@
-/** Contrato de referência v1. Ainda não integrado ao protótipo Vite. */
+/** Contrato da cena salva. Versões antigas passam por domain/queue/migration.ts. */
 export type EntityId = string;
 export type Meters = number; // Runtime: número finito; limites específicos por campo.
 export interface PointXZ { x: Meters; z: Meters }
@@ -50,18 +50,26 @@ export interface QueueRoute {
   points: Vertex[];
 }
 
+/** Uma fila por projeto. Espaçamento entre vizinhos: simulation.spacingMeters. */
+export interface QueueChain {
+  // Ordem da fila: índice 0 é a primeira pessoa. Vizinhos no array são vinculados.
+  // Vazio com pessoas em people = projeto legado, ainda não convertido.
+  personIds: EntityId[];
+}
+
 export interface PersonPlacement {
   id: EntityId;
-  // null/null = colocação livre no editor visual; string/número = percurso legado.
+  // null/null = pessoa da cadeia ou livre legada; string/número = percurso legado.
   routeId: EntityId | null;
   distanceAlongRouteMeters: Meters | null;
-  // Para percurso, cache validado no servidor; livre: posição e yaw são a fonte.
+  // Para percurso, cache validado no servidor; nos demais, posição e yaw são a fonte.
+  // Frente da pessoa: (sin yaw, cos yaw). Yaw 0 olha para +Z.
   position: PointXZ;
   yawRadians: number;
 }
 
 export interface ProjectScene {
-  schemaVersion: 1;
+  schemaVersion: 2;
   units: 'meters';
   coordinateSystem: 'right-handed-y-up-xz-floor';
   environment: Environment;
@@ -69,6 +77,7 @@ export interface ProjectScene {
   posts: Stanchion[];
   belts: Belt[];
   routes: QueueRoute[];
+  queue: QueueChain;
   people: PersonPlacement[];
   simulation: {
     spacingMeters: Meters;
