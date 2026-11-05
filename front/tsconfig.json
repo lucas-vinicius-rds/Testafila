@@ -37,7 +37,11 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     ".next-dev/types/**/*.ts",
-    ".next-dev/dev/types/**/*.ts"
+    ".next-dev/dev/types/**/*.ts",
+    ".next-dev-codex/types/**/*.ts",
+    ".next-dev-codex/dev/types/**/*.ts",
+    ".next-release-onda3/types/**/*.ts",
+    ".next-release-onda3/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
