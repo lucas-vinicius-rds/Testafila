@@ -7,6 +7,7 @@ import { canMarkCorner, closingWallMeters, floorDistanceMeters, formatMeters, MI
 import { useArCapability } from '../session/use-ar-capability.ts';
 import { DomOverlayUnavailableError, createXrSessionController, type XrTracking } from '../session/xr-session.ts';
 import { createAssemblyScene, type AssemblyScene } from './assembly-scene.ts';
+import { createHitStabilizer } from '../session/hit-stabilizer.ts';
 import {
   appendPerson, ASSEMBLY_STEPS, canRedo, canReview, canUndo, closeArea, closePlan, createAssembly, currentDraft, currentScene, goToStep,
   hasPeople, hasWork, needsRealignment, PERSON_TURN_RADIANS, placeAtHit, postNear, realignTargets, redo, restartRealignment, sceneForReview,
@@ -125,6 +126,7 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
     getXr: () => navigator.xr,
     getRuntime: () => sceneRef.current,
     getOverlayRoot: () => overlayRef.current,
+    stabilizer: createHitStabilizer(),
     onTrackingChange: setTracking,
     onActive: () => setSessionActive(true),
     onFinished: () => {

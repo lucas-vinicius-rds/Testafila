@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { detectArCapability } from './ar-capability.ts';
+import { createHitStabilizer } from './hit-stabilizer.ts';
 import { createXrSessionController, DomOverlayUnavailableError, type XrSessionOptions, type XrSessionRuntime, type XrTracking } from './xr-session.ts';
 
 const FLOOR_ORIENTATION = { x: 0, y: 0, z: 0, w: 1 };
@@ -61,7 +62,7 @@ function createHarness(overrides: Partial<XrSessionOptions> & { overlayNegotiate
 
   return {
     calls, controller, frame, listeners, reticle, session, tracking, world,
-    tick() { calls.length = 0; loop?.(0, frame); return [...calls]; },
+    tick(time = 0) { calls.length = 0; loop?.(time, frame); return [...calls]; },
     tickWithoutFrame() { calls.length = 0; if (loop) Reflect.apply(loop, undefined, [0]); return [...calls]; },
     setVisibility(state: XRVisibilityState) { session.visibilityState = state; listeners.get('visibilitychange')?.(); },
   };
@@ -242,4 +243,17 @@ test('capability comes only from the secure context and isSessionSupported', asy
   assert.deepEqual(await detectArCapability({ isSecureContext: true, xr: xr(false) }), { status: 'unsupported' });
   assert.deepEqual(await detectArCapability({ isSecureContext: true, xr: xr(true) }), { status: 'supported' });
   assert.deepEqual(await detectArCapability({ isSecureContext: true, xr: xr(new Error('falhou')) }), { status: 'error', reason: 'falhou' });
+});
+
+test('with a stabilizer, marking waits until the floor is learned and the aim holds still', async () => {
+  const harness = createHarness({ stabilizer: createHitStabilizer() });
+  await harness.controller.start();
+  harness.tick(0);
+  assert.equal(harness.reticle.visible, true);
+  assert.equal(harness.controller.tracking(), 'searching');
+  assert.equal(harness.controller.currentHit(), null);
+  for (let i = 1; i <= 60; i += 1) harness.tick(i * 1000 / 60);
+  assert.equal(harness.controller.tracking(), 'surface');
+  const hit = harness.controller.currentHit();
+  assert.ok(hit && Math.abs(hit.x - 1) < 1e-9 && hit.y === 0 && Math.abs(hit.z - 2) < 1e-9);
 });

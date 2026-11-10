@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import { horizontalHitPoint, type XrPoint } from '../xr-check/xr-check-logic.ts';
+import type { HitStabilizer, XrRay } from './hit-stabilizer.ts';
 
 export type XrTracking = 'inactive' | 'searching' | 'surface' | 'lost' | 'hidden';
 
@@ -34,8 +35,14 @@ export type XrSessionOptions = Readonly<{
   /** Runs on every session finish, before `session.end()` when one is requested. */
   onFinished?: () => void;
   onSelect: () => void;
-  /** Runs per frame: mutate objects or refs here, never React state. */
+  /** Runs per frame with the point under the reticle: mutate objects or refs here, never React state. */
   onFrame?: (hit: XrPoint | null) => void;
+  /**
+   * Optional filter for the raw hit-test. With it, the reticle follows the smoothed
+   * point and tracking reaches `surface` (and `currentHit` returns a point) only once
+   * the point holds still on the locked floor.
+   */
+  stabilizer?: HitStabilizer;
 }>;
 
 export type XrSessionController = Readonly<{
@@ -71,6 +78,20 @@ export function preventXrSelectOn(element: Element): () => void {
   return () => element.removeEventListener('beforexrselect', prevent);
 }
 
+/** Camera forward ray (-Z of the viewer pose) in the floor space. */
+function viewerRay(pose: XRViewerPose): XrRay | null {
+  const transform = pose.transform;
+  if (!transform) return null;
+  const { position: p, orientation: q } = transform;
+  // Rotate (0, 0, -1) by the quaternion.
+  const direction = {
+    x: -2 * (q.x * q.z + q.w * q.y),
+    y: -2 * (q.y * q.z - q.w * q.x),
+    z: -(1 - 2 * (q.x * q.x + q.y * q.y)),
+  };
+  return { origin: { x: p.x, y: p.y, z: p.z }, direction };
+}
+
 export function createXrSessionController(options: XrSessionOptions): XrSessionController {
   const variant = options.variant ?? 'project';
   let activeSession: XRSession | null = null;
@@ -88,6 +109,7 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
 
   const hideReticle = () => {
     latestHit = null;
+    options.stabilizer?.interrupt();
     const runtime = options.getRuntime();
     if (runtime) runtime.reticle.visible = false;
   };
@@ -100,6 +122,7 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
     try { hitTestSource?.cancel(); } catch { /* already canceled */ }
     hitTestSource = null;
     floorSpace = null;
+    options.stabilizer?.reset();
     latestHit = null;
     activeSession = null;
     const runtime = options.getRuntime();
@@ -118,7 +141,7 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
     return runtime.renderer.xr.isPresenting && runtime.renderer.xr.getCamera().matrixWorld.elements.every(Number.isFinite);
   };
 
-  const renderFrame = (session: XRSession, frame: XRFrame) => {
+  const renderFrame = (session: XRSession, frame: XRFrame, timeMs: number) => {
     const runtime = options.getRuntime();
     const space = floorSpace;
     const source = hitTestSource;
@@ -148,15 +171,27 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
       hit = horizontalHitPoint(result.getPose(space));
       if (hit) break;
     }
+    let ready = Boolean(hit);
+    let shown = hit;
+    if (options.stabilizer) {
+      const result = options.stabilizer.update(hit, viewerRay(viewerPose), timeMs);
+      runtime.reticle.visible = Boolean(result.point);
+      if (result.point) runtime.reticle.position.set(result.point.x, result.point.y + RETICLE_LIFT_METERS, result.point.z);
+      // The preview follows the smoothed point; marking waits for a stable one.
+      shown = result.point;
+      hit = result.stable ? result.point : null;
+      ready = result.stable;
+    } else {
+      runtime.reticle.visible = Boolean(hit);
+      if (hit) runtime.reticle.position.set(hit.x, hit.y + RETICLE_LIFT_METERS, hit.z);
+    }
     latestHit = hit;
-    runtime.reticle.visible = Boolean(hit);
-    if (hit) {
-      runtime.reticle.position.set(hit.x, hit.y + RETICLE_LIFT_METERS, hit.z);
+    if (ready) {
       setTracking('surface');
     } else {
       setTracking('searching');
     }
-    options.onFrame?.(hit);
+    options.onFrame?.(shown);
     draw();
   };
 
@@ -231,9 +266,10 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
 
       setTracking('searching');
       options.onActive?.();
-      runtime.renderer.setAnimationLoop((_time, frame) => {
+      options.stabilizer?.reset();
+      runtime.renderer.setAnimationLoop((time, frame) => {
         if (!frame) return;
-        renderFrame(session, frame);
+        renderFrame(session, frame, time);
       });
     } catch (cause) {
       if (activeSession) finishSession(activeSession, true);
