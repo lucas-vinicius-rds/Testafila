@@ -10,7 +10,7 @@ const WALL_ORIENTATION = { x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 };
 function createHarness(overrides: Partial<XrSessionOptions> & { overlayNegotiated?: boolean } = {}) {
   const calls: string[] = [];
   const listeners = new Map<string, () => void>();
-  const world = { pose: true, orientation: FLOOR_ORIENTATION, hit: true as boolean, cameraFinite: true };
+  const world = { pose: true, orientation: FLOOR_ORIENTATION, hit: true as boolean, cameraFinite: true, root: { x: 0, y: 0, z: 0, rotationY: 0 } };
   let loop: ((time: number, frame: XRFrame) => void) | null = null;
 
   const session = {
@@ -46,6 +46,10 @@ function createHarness(overrides: Partial<XrSessionOptions> & { overlayNegotiate
     scene: {},
     camera: {},
     reticle,
+    worldRoot: {
+      position: { set(x: number, y: number, z: number) { Object.assign(world.root, { x, y, z }); } },
+      rotation: { set(_x: number, y: number) { world.root.rotationY = y; } },
+    },
   } as unknown as XrSessionRuntime;
 
   const tracking: XrTracking[] = [];
@@ -256,4 +260,82 @@ test('with a stabilizer, marking waits until the floor is learned and the aim ho
   assert.equal(harness.controller.tracking(), 'surface');
   const hit = harness.controller.currentHit();
   assert.ok(hit && Math.abs(hit.x - 1) < 1e-9 && hit.y === 0 && Math.abs(hit.z - 2) < 1e-9);
+});
+
+test('anchors and plane detection are requested as optional features only when asked', async () => {
+  let init: XRSessionInit | undefined;
+  const harness = createHarness({
+    anchors: true,
+    planes: true,
+    getXr: () => ({ requestSession: (async (_mode: string, options: XRSessionInit) => { init = options; return harness.session; }) as unknown as XRSystem['requestSession'] }),
+  });
+  await harness.controller.start();
+  assert.deepEqual(init?.requiredFeatures, ['hit-test', 'local-floor']);
+  assert.deepEqual(init?.optionalFeatures, ['dom-overlay', 'anchors', 'plane-detection']);
+});
+
+test('with an anchor, a map correction moves the world root and keeps hits in the stable frame', async () => {
+  const harness = createHarness({ anchors: true });
+  const anchor = { anchorSpace: { anchor: true }, delete() { harness.calls.push('anchor-delete'); } };
+  const anchorAt = { x: 1, y: 0, z: 2 };
+  let created = 0;
+  const frame = harness.frame as unknown as Record<string, unknown>;
+  frame.getHitTestResults = () => [{
+    getPose: () => ({ transform: { position: { x: 1, y: 0, z: 2 }, orientation: FLOOR_ORIENTATION } }),
+    createAnchor: async () => { created += 1; return anchor; },
+  }];
+  frame.getPose = (space: unknown) => (space === anchor.anchorSpace ? { transform: { position: anchorAt } } : undefined);
+
+  await harness.controller.start();
+  harness.tick();
+  await Promise.resolve();
+  harness.tick();
+  assert.equal(created, 1);
+  assert.deepEqual(harness.controller.currentHit(), { x: 1, y: 0, z: 2 });
+  assert.deepEqual(harness.world.root, { x: 0, y: 0, z: 0, rotationY: -0 });
+
+  // The device shifts its map 20 cm: the anchor and the same physical floor point move together.
+  anchorAt.x = 1.2;
+  frame.getHitTestResults = () => [{ getPose: () => ({ transform: { position: { x: 1.2, y: 0, z: 2 }, orientation: FLOOR_ORIENTATION } }) }];
+  harness.tick();
+  const hit = harness.controller.currentHit();
+  assert.ok(hit && Math.abs(hit.x - 1) < 1e-9 && Math.abs(hit.z - 2) < 1e-9);
+  assert.ok(Math.abs(harness.world.root.x - 0.2) < 1e-9);
+  assert.equal(created, 1);
+
+  await harness.controller.finish(true);
+  assert.ok(harness.calls.includes('anchor-delete'));
+  assert.equal(harness.world.root.x, 0);
+});
+
+test('a device that refuses anchors keeps working without them', async () => {
+  const harness = createHarness({ anchors: true });
+  let attempts = 0;
+  const frame = harness.frame as unknown as Record<string, unknown>;
+  frame.getHitTestResults = () => [{
+    getPose: () => ({ transform: { position: { x: 1, y: 0, z: 2 }, orientation: FLOOR_ORIENTATION } }),
+    createAnchor: async () => { attempts += 1; throw new Error('not supported'); },
+  }];
+  await harness.controller.start();
+  harness.tick();
+  await Promise.resolve(); await Promise.resolve();
+  harness.tick(); harness.tick();
+  assert.equal(attempts, 1);
+  assert.deepEqual(harness.controller.currentHit(), { x: 1, y: 0, z: 2 });
+});
+
+test('floor hints follow the stabilizer and clear when tracking is lost', async () => {
+  const hints: string[] = [];
+  const harness = createHarness({ stabilizer: createHitStabilizer(), onFloorHintChange: (hint) => hints.push(hint) });
+  await harness.controller.start();
+  harness.tick(0);
+  assert.deepEqual(hints, ['scan']);
+  for (let i = 1; i <= 60; i += 1) harness.tick(i * 1000 / 60);
+  assert.deepEqual(hints, ['scan', 'none']);
+  harness.world.hit = false;
+  for (let i = 61; i <= 200; i += 1) harness.tick(i * 1000 / 60);
+  assert.deepEqual(hints, ['scan', 'none', 'aim-floor']);
+  harness.world.pose = false;
+  harness.tick(4000);
+  assert.deepEqual(hints, ['scan', 'none', 'aim-floor', 'none']);
 });

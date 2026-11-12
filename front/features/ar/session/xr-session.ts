@@ -1,5 +1,7 @@
 import type * as THREE from 'three';
 import { horizontalHitPoint, type XrPoint } from '../xr-check/xr-check-logic.ts';
+import { fitDrift, NO_DRIFT, toRaw, toStable, type AnchorPair, type Drift } from './anchor-drift.ts';
+import { createFloorGuidance, type XrFloorHint } from './floor-guidance.ts';
 import type { HitStabilizer, XrRay } from './hit-stabilizer.ts';
 
 export type XrTracking = 'inactive' | 'searching' | 'surface' | 'lost' | 'hidden';
@@ -9,6 +11,13 @@ export type XrSessionRuntime = Readonly<{
   scene: THREE.Scene;
   camera: THREE.Camera;
   reticle: THREE.Object3D;
+  /**
+   * Parent of everything placed on the floor. With `anchors`, the controller moves
+   * it to follow the device's map corrections; the reticle stays outside it.
+   */
+  worldRoot?: THREE.Object3D;
+  /** Feedback on the reticle: 0..1 while the aim settles, `stable` once it can be marked. */
+  setAim?: (progress: number, stable: boolean) => void;
 }>;
 
 /**
@@ -43,6 +52,21 @@ export type XrSessionOptions = Readonly<{
    * the point holds still on the locked floor.
    */
   stabilizer?: HitStabilizer;
+  /**
+   * Asks for the optional `anchors` feature. Where the device grants it, anchors
+   * are dropped on stable floor points and the points reported by `currentHit`
+   * and `onFrame` are expressed in a frame that follows the device's map
+   * corrections, so marked work stays on the same physical spot. `worldRoot`
+   * is kept in step. Without the feature nothing changes.
+   */
+  anchors?: boolean;
+  /**
+   * Asks for the optional `plane-detection` feature and feeds the stabilizer the
+   * height of the lowest large horizontal plane, so a table is not taken for floor.
+   */
+  planes?: boolean;
+  /** Needs `stabilizer`. Reports what to tell the user about finding the floor. */
+  onFloorHintChange?: (hint: XrFloorHint) => void;
 }>;
 
 export type XrSessionController = Readonly<{
@@ -70,6 +94,37 @@ export class DomOverlayUnavailableError extends Error {
 }
 
 const RETICLE_LIFT_METERS = 0.008;
+const MAX_ANCHORS = 6;
+const ANCHOR_SPACING_METERS = 2;
+const FLOOR_PLANE_MIN_AREA_M2 = 1.5;
+const PLANE_SCAN_EVERY_FRAMES = 15;
+
+type TrackedAnchor = { anchor: XRAnchor; base: XrPoint | null };
+
+function polygonArea(polygon: readonly DOMPointReadOnly[]): number {
+  let twice = 0;
+  for (let i = 0; i < polygon.length; i += 1) {
+    const a = polygon[i];
+    const b = polygon[(i + 1) % polygon.length];
+    twice += a.x * b.z - b.x * a.z;
+  }
+  return Math.abs(twice) / 2;
+}
+
+/** Height of the lowest horizontal plane large enough to be a floor, or null. */
+function lowestFloorPlaneY(frame: XRFrame, space: XRReferenceSpace): number | null {
+  const planes = frame.detectedPlanes;
+  if (!planes) return null;
+  let lowest: number | null = null;
+  for (const plane of planes) {
+    if (plane.orientation !== 'horizontal' || polygonArea(plane.polygon) < FLOOR_PLANE_MIN_AREA_M2) continue;
+    let y: number | undefined;
+    try { y = frame.getPose(plane.planeSpace, space)?.transform.position.y; } catch { continue; }
+    if (y === undefined || !Number.isFinite(y)) continue;
+    if (lowest === null || y < lowest) lowest = y;
+  }
+  return lowest;
+}
 
 /** Keeps taps on overlay controls from also firing the session `select`. */
 export function preventXrSelectOn(element: Element): () => void {
@@ -100,6 +155,81 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
   let latestHit: XrPoint | null = null;
   let tracking: XrTracking = 'inactive';
   let removeListeners: (() => void) | null = null;
+  const guidance = options.stabilizer && options.onFloorHintChange ? createFloorGuidance() : null;
+  let floorHint: XrFloorHint = 'none';
+  let anchors: TrackedAnchor[] = [];
+  let anchorPending = false;
+  let anchorsUnavailable = false;
+  let drift: Drift = NO_DRIFT;
+  let planeY: number | null = null;
+  let frameCount = 0;
+
+  const setFloorHint = (next: XrFloorHint) => {
+    if (floorHint === next) return;
+    floorHint = next;
+    options.onFloorHintChange?.(next);
+  };
+
+  const applyDrift = (next: Drift) => {
+    drift = next;
+    const root = options.getRuntime()?.worldRoot;
+    if (!root) return;
+    root.position.set(next.dx, next.dy, next.dz);
+    // Three turns +X toward −Z for a positive rotation.y; the drift turns it toward +Z.
+    root.rotation.set(0, -next.rotationRadians, 0);
+  };
+
+  const dropAnchors = () => {
+    for (const { anchor } of anchors) { try { anchor.delete(); } catch { /* already gone with the session */ } }
+    anchors = [];
+    anchorPending = false;
+    anchorsUnavailable = false;
+    planeY = null;
+    frameCount = 0;
+    applyDrift(NO_DRIFT);
+  };
+
+  /** Refits the drift from the anchors the device still tracks; keeps the last fit otherwise. */
+  const updateDrift = (frame: XRFrame, space: XRReferenceSpace) => {
+    if (!anchors.length) return;
+    const pairs: AnchorPair[] = [];
+    for (const entry of anchors) {
+      if (frame.trackedAnchors && !frame.trackedAnchors.has(entry.anchor)) continue;
+      let pose: XRPose | undefined;
+      try { pose = frame.getPose(entry.anchor.anchorSpace, space); } catch { continue; }
+      if (!pose) continue;
+      const { x, y, z } = pose.transform.position;
+      if (![x, y, z].every(Number.isFinite)) continue;
+      const current = { x, y, z };
+      // A later anchor joins in the frame the earlier ones define.
+      entry.base ??= toStable(drift, current);
+      pairs.push({ base: entry.base, current });
+    }
+    if (pairs.length) applyDrift(fitDrift(pairs));
+  };
+
+  /** Anchors spread over the floor: each new one at least ANCHOR_SPACING_METERS from the rest. */
+  const maybeAnchor = (session: XRSession, result: XRHitTestResult | null, point: XrPoint) => {
+    if (!options.anchors || anchorsUnavailable || anchorPending || !result?.createAnchor || anchors.length >= MAX_ANCHORS) return;
+    for (const { base } of anchors) {
+      if (!base) return;
+      const at = toRaw(drift, base);
+      if (Math.hypot(at.x - point.x, at.z - point.z) < ANCHOR_SPACING_METERS) return;
+    }
+    anchorPending = true;
+    let created: Promise<XRAnchor> | undefined;
+    try { created = result.createAnchor(); } catch { created = undefined; }
+    if (!created) { anchorPending = false; anchorsUnavailable = true; return; }
+    created.then((anchor) => {
+      anchorPending = false;
+      if (activeSession !== session) { try { anchor.delete(); } catch { /* session gone */ } return; }
+      anchors.push({ anchor, base: null });
+    }, () => {
+      // Feature not granted or not supported: stop asking for this session.
+      anchorPending = false;
+      anchorsUnavailable = true;
+    });
+  };
 
   const setTracking = (next: XrTracking) => {
     if (tracking === next) return;
@@ -110,6 +240,8 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
   const hideReticle = () => {
     latestHit = null;
     options.stabilizer?.interrupt();
+    guidance?.reset();
+    setFloorHint('none');
     const runtime = options.getRuntime();
     if (runtime) runtime.reticle.visible = false;
   };
@@ -123,6 +255,9 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
     hitTestSource = null;
     floorSpace = null;
     options.stabilizer?.reset();
+    guidance?.reset();
+    setFloorHint('none');
+    dropAnchors();
     latestHit = null;
     activeSession = null;
     const runtime = options.getRuntime();
@@ -166,17 +301,24 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
       return;
     }
 
+    if (options.anchors) updateDrift(frame, space);
+    if (options.planes && frameCount % PLANE_SCAN_EVERY_FRAMES === 0) planeY = lowestFloorPlaneY(frame, space);
+    frameCount += 1;
+
     let hit: XrPoint | null = null;
+    let hitResult: XRHitTestResult | null = null;
     for (const result of frame.getHitTestResults(source)) {
       hit = horizontalHitPoint(result.getPose(space));
-      if (hit) break;
+      if (hit) { hitResult = result; break; }
     }
     let ready = Boolean(hit);
     let shown = hit;
     if (options.stabilizer) {
-      const result = options.stabilizer.update(hit, viewerRay(viewerPose), timeMs);
+      const result = options.stabilizer.update(hit, viewerRay(viewerPose), timeMs, planeY);
       runtime.reticle.visible = Boolean(result.point);
       if (result.point) runtime.reticle.position.set(result.point.x, result.point.y + RETICLE_LIFT_METERS, result.point.z);
+      runtime.setAim?.(result.progress, result.stable);
+      if (guidance) setFloorHint(guidance.update({ floorLocked: result.floorY !== null, hasPoint: Boolean(result.point), timeMs }));
       // The preview follows the smoothed point; marking waits for a stable one.
       shown = result.point;
       hit = result.stable ? result.point : null;
@@ -184,6 +326,12 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
     } else {
       runtime.reticle.visible = Boolean(hit);
       if (hit) runtime.reticle.position.set(hit.x, hit.y + RETICLE_LIFT_METERS, hit.z);
+    }
+    if (hit) maybeAnchor(session, hitResult, hit);
+    if (options.anchors) {
+      // The reticle is drawn where the device sees it; the work is stored in the stable frame.
+      if (hit) hit = toStable(drift, hit);
+      if (shown) shown = toStable(drift, shown);
     }
     latestHit = hit;
     if (ready) {
@@ -202,10 +350,13 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
     // Keep this before any await: it is the call that consumes the user activation.
     const init: XRSessionInit = { requiredFeatures: ['hit-test', 'local-floor'] };
     const overlayRoot = options.getOverlayRoot();
-    if (overlayRoot) {
-      init.optionalFeatures = ['dom-overlay'];
-      init.domOverlay = { root: overlayRoot };
-    }
+    const optional = [
+      ...(overlayRoot ? ['dom-overlay'] : []),
+      ...(options.anchors ? ['anchors'] : []),
+      ...(options.planes ? ['plane-detection'] : []),
+    ];
+    if (optional.length) init.optionalFeatures = optional;
+    if (overlayRoot) init.domOverlay = { root: overlayRoot };
     const request = xr.requestSession('immersive-ar', init);
 
     try {
@@ -267,6 +418,7 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
       setTracking('searching');
       options.onActive?.();
       options.stabilizer?.reset();
+      dropAnchors();
       runtime.renderer.setAnimationLoop((time, frame) => {
         if (!frame) return;
         renderFrame(session, frame, time);

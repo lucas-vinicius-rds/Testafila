@@ -77,3 +77,22 @@ test('ray-floor intersection ignores rays looking up or too far', () => {
   assert.equal(rayFloorPoint({ origin: { x: 0, y: 1.5, z: 0 }, direction: { x: 0, y: 0.1, z: -1 } }, 0, 8), null);
   assert.equal(rayFloorPoint({ origin: { x: 0, y: 1.5, z: 0 }, direction: { x: 0, y: -0.01, z: -1 } }, 0, DEFAULT_HIT_STABILIZER.maxRayDistanceMeters), null);
 });
+
+test('a floor locked on a table moves down to the lowest large detected plane', () => {
+  const s = createHitStabilizer();
+  const onTable = feed(s, 40, () => ({ x: 0, y: 0.75, z: 0 }));
+  assert.equal(onTable.floorY, 0.75);
+  const r = s.update({ x: 0, y: 0.75, z: 0 }, { origin: { x: 0, y: 1.5, z: 0 }, direction: { x: 0, y: -1, z: -1 } }, 2000, 0);
+  assert.equal(r.floorY, 0);
+  assert.equal(r.stable, false);
+  assert.equal(r.point!.y, 0);
+});
+
+test('hits well above the detected floor plane are not learned as floor', () => {
+  const s = createHitStabilizer();
+  let last = s.update(null, null, 0);
+  for (let i = 0; i < 40; i += 1) last = s.update({ x: 0, y: 0.75, z: 0 }, null, i * FRAME_MS, 0);
+  assert.equal(last.floorY, null);
+  for (let i = 40; i < 80; i += 1) last = s.update({ x: 0, y: 0.01, z: 0 }, null, i * FRAME_MS, 0);
+  assert.ok(last.floorY !== null && Math.abs(last.floorY - 0.01) < 1e-9);
+});

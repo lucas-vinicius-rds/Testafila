@@ -9,6 +9,7 @@ import { createMeasureLabels, type Segment } from './measure-labels.ts';
 
 const FLOOR_LIFT_METERS = 0.012;
 const PREVIEW_LIFT_METERS = 0.012;
+const RETICLE_SETTLING_OPACITY = 0.4;
 
 export type AssemblyScene = XrSessionRuntime & Readonly<{
   sync: (view: SceneLayersView, alignment: SessionAlignmentState | null) => void;
@@ -38,15 +39,25 @@ export function createAssemblyScene(canvas: HTMLCanvasElement): AssemblyScene {
   const camera = new THREE.PerspectiveCamera(65, 1, 0.01, 40);
   const reticle = new THREE.Mesh(
     new THREE.RingGeometry(0.075, 0.11, 32),
-    new THREE.MeshBasicMaterial({ color: projectColors.line, side: THREE.DoubleSide, depthTest: false }),
+    new THREE.MeshBasicMaterial({ color: projectColors.line, side: THREE.DoubleSide, depthTest: false, transparent: true, opacity: RETICLE_SETTLING_OPACITY }),
   );
   reticle.rotation.x = -Math.PI / 2;
   reticle.visible = false;
   scene.add(reticle);
+  // Center dot: shown only when the aim is firm enough to mark.
+  const aimDot = new THREE.Mesh(
+    new THREE.CircleGeometry(0.028, 24),
+    new THREE.MeshBasicMaterial({ color: projectColors.line, side: THREE.DoubleSide, depthTest: false }),
+  );
+  aimDot.visible = false;
+  reticle.add(aimDot);
 
+  // The session moves this group to follow the device's map corrections.
+  const worldRoot = new THREE.Group();
+  scene.add(worldRoot);
   const layers = createSceneLayers();
   layers.root.visible = false;
-  scene.add(layers.root);
+  worldRoot.add(layers.root);
 
   const previewPositions = new THREE.BufferAttribute(new Float32Array(6), 3);
   const previewGeometry = new THREE.BufferGeometry().setAttribute('position', previewPositions);
@@ -73,6 +84,11 @@ export function createAssemblyScene(canvas: HTMLCanvasElement): AssemblyScene {
     scene,
     camera,
     reticle,
+    worldRoot,
+    setAim: (progress, stable) => {
+      reticle.material.opacity = stable ? 1 : RETICLE_SETTLING_OPACITY + (0.9 - RETICLE_SETTLING_OPACITY) * Math.min(Math.max(progress, 0), 1);
+      aimDot.visible = stable;
+    },
     sync: (view, alignment) => {
       layers.sync(view);
       labels.setSegments([...consecutive(view.scene?.environment.perimeter ?? [], true), ...consecutive(view.draft, false)]);
@@ -98,6 +114,8 @@ export function createAssemblyScene(canvas: HTMLCanvasElement): AssemblyScene {
       layers.dispose();
       reticle.geometry.dispose();
       reticle.material.dispose();
+      aimDot.geometry.dispose();
+      aimDot.material.dispose();
       previewGeometry.dispose();
       previewMaterial.dispose();
       renderer.dispose();

@@ -43,7 +43,12 @@ export const DEFAULT_HIT_STABILIZER: HitStabilizerConfig = {
 };
 
 export type HitStabilizer = Readonly<{
-  update: (rawHit: XrPoint | null, ray: XrRay | null, timeMs: number) => StabilizedHit;
+  /**
+   * `floorHintY` is the height of the lowest large horizontal plane the device
+   * detected, when known. Hits well above it are not learned as floor, and a floor
+   * already locked well above it (a table, a counter) moves down to it.
+   */
+  update: (rawHit: XrPoint | null, ray: XrRay | null, timeMs: number, floorHintY?: number | null) => StabilizedHit;
   /** Forgets everything, including the floor. Call on a new session or lost tracking. */
   reset: () => void;
   /** Forgets the smoothing and stability window but keeps the floor. */
@@ -97,11 +102,20 @@ export function createHitStabilizer(config: HitStabilizerConfig = DEFAULT_HIT_ST
     if (spread <= config.floorSpreadMeters) floorY = median(floorSamples);
   };
 
-  const update = (rawHit: XrPoint | null, ray: XrRay | null, timeMs: number): StabilizedHit => {
+  const update = (rawHit: XrPoint | null, ray: XrRay | null, timeMs: number, floorHintY: number | null = null): StabilizedHit => {
     let target: XrPoint | null = null;
+    const hint = floorHintY !== null && Number.isFinite(floorHintY) ? floorHintY : null;
+    if (hint !== null && floorY !== null && floorY - hint > config.floorToleranceMeters) {
+      floorY = hint;
+      floorSamples = [];
+      interrupt();
+    }
 
     if (floorY === null) {
-      if (rawHit) { learnFloor(rawHit.y); target = rawHit; }
+      if (rawHit) {
+        if (hint === null || rawHit.y - hint <= config.floorToleranceMeters) learnFloor(rawHit.y);
+        target = rawHit;
+      }
     } else if (rawHit && Math.abs(rawHit.y - floorY) <= config.floorToleranceMeters) {
       // Follow slow drift of the tracked floor without letting one frame move it.
       floorY += (rawHit.y - floorY) * 0.02;

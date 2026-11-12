@@ -7,6 +7,7 @@ import { canMarkCorner, closingWallMeters, floorDistanceMeters, formatMeters, MI
 import { useArCapability } from '../session/use-ar-capability.ts';
 import { DomOverlayUnavailableError, createXrSessionController, type XrTracking } from '../session/xr-session.ts';
 import { createAssemblyScene, type AssemblyScene } from './assembly-scene.ts';
+import type { XrFloorHint } from '../session/floor-guidance.ts';
 import { createHitStabilizer } from '../session/hit-stabilizer.ts';
 import {
   appendPerson, ASSEMBLY_STEPS, canRedo, canReview, canUndo, closeArea, closePlan, createAssembly, currentDraft, currentScene, goToStep,
@@ -33,6 +34,12 @@ const stepNames: Record<AssemblyStep, string> = { corners: 'Cantos', areas: 'Ár
 const trackingProblem: Partial<Record<XrTracking, string>> = {
   lost: 'O aparelho perdeu a referência do lugar. Nada foi perdido: mova devagar até voltar.',
   hidden: 'A câmera está pausada. Volte para esta tela para continuar.',
+};
+
+const floorHintText: Partial<Record<XrFloorHint, string>> = {
+  scan: 'Aponte para o chão e mova o celular devagar para os lados, até o círculo firmar.',
+  'scan-slow': 'Está difícil achar o chão. Procure um lugar mais claro e aponte para um piso com textura, sem reflexo.',
+  'aim-floor': 'Aponte o celular para o chão.',
 };
 
 function stepGuidance(state: AssemblyState): string {
@@ -96,6 +103,7 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
   const [sessionActive, setSessionActive] = useState(false);
   const [starting, setStarting] = useState(false);
   const [tracking, setTracking] = useState<XrTracking>('inactive');
+  const [floorHint, setFloorHint] = useState<XrFloorHint>('none');
   const [exitOpen, setExitOpen] = useState(false);
   const [startFailure, setStartFailure] = useState<string | null>(null);
   const [planChoice, setPlanChoice] = useState(false);
@@ -127,6 +135,9 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
     getRuntime: () => sceneRef.current,
     getOverlayRoot: () => overlayRef.current,
     stabilizer: createHitStabilizer(),
+    anchors: true,
+    planes: true,
+    onFloorHintChange: setFloorHint,
     onTrackingChange: setTracking,
     onActive: () => setSessionActive(true),
     onFinished: () => {
@@ -271,7 +282,7 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
         <p className={styles.step}>{realigning ? 'Alinhar de novo' : `Etapa ${stepIndex + 1} de ${ASSEMBLY_STEPS.length} · ${stepNames[state.step]}`}</p>
         <button type="button" className={styles.quiet} onClick={requestExit}>Sair</button>
       </div>
-      <p className={suspended ? styles.warning : styles.guidance} role="status" aria-live="polite">{trackingProblem[tracking] ?? stepGuidance(state)}</p>
+      <p className={suspended ? styles.warning : styles.guidance} role="status" aria-live="polite">{trackingProblem[tracking] ?? (appending ? undefined : floorHintText[floorHint]) ?? stepGuidance(state)}</p>
       <p ref={liveMeasureRef} className={styles.liveMeasure} aria-hidden="true" />
       {state.realignDifferenceMeters !== null && !realigning && <p className={styles.guidance}>Diferença entre a planta e o chão: {formatMeters(Math.abs(state.realignDifferenceMeters))}</p>}
     </div>
