@@ -10,7 +10,7 @@ const WALL_ORIENTATION = { x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 };
 function createHarness(overrides: Partial<XrSessionOptions> & { overlayNegotiated?: boolean } = {}) {
   const calls: string[] = [];
   const listeners = new Map<string, () => void>();
-  const world = { pose: true, orientation: FLOOR_ORIENTATION, hit: true as boolean, cameraFinite: true, root: { x: 0, y: 0, z: 0, rotationY: 0 } };
+  const world = { pose: true, orientation: FLOOR_ORIENTATION, hit: true as boolean, at: { x: 1, y: 0, z: 2 }, cameraFinite: true, root: { x: 0, y: 0, z: 0, rotationY: 0 }, floorY: undefined as number | null | undefined };
   let loop: ((time: number, frame: XRFrame) => void) | null = null;
 
   const session = {
@@ -19,14 +19,14 @@ function createHarness(overrides: Partial<XrSessionOptions> & { overlayNegotiate
     addEventListener(type: string, listener: () => void) { calls.push(`add:${type}`); listeners.set(type, listener); },
     removeEventListener(type: string) { calls.push(`remove:${type}`); listeners.delete(type); },
     async requestReferenceSpace(type: string) { calls.push(`space:${type}`); return { type }; },
-    async requestHitTestSource() { calls.push('hit-source'); return { cancel() { calls.push('hit-cancel'); } }; },
+    async requestHitTestSource(_options?: XRHitTestOptionsInit) { calls.push('hit-source'); return { cancel() { calls.push('hit-cancel'); } }; },
     async end() { calls.push('end'); listeners.get('end')?.(); },
   };
   const frame = {
     getViewerPose() { return world.pose ? {} : null; },
     getHitTestResults() {
       return world.hit
-        ? [{ getPose: () => ({ transform: { position: { x: 1, y: 0, z: 2 }, orientation: world.orientation } }) }]
+        ? [{ getPose: () => ({ transform: { position: { ...world.at }, orientation: world.orientation } }) }]
         : [];
     },
   } as unknown as XRFrame;
@@ -50,6 +50,7 @@ function createHarness(overrides: Partial<XrSessionOptions> & { overlayNegotiate
       position: { set(x: number, y: number, z: number) { Object.assign(world.root, { x, y, z }); } },
       rotation: { set(_x: number, y: number) { world.root.rotationY = y; } },
     },
+    setFloorY(y: number | null) { world.floorY = y; },
   } as unknown as XrSessionRuntime;
 
   const tracking: XrTracking[] = [];
@@ -67,10 +68,23 @@ function createHarness(overrides: Partial<XrSessionOptions> & { overlayNegotiate
   return {
     calls, controller, frame, listeners, reticle, session, tracking, world,
     tick(time = 0) { calls.length = 0; loop?.(time, frame); return [...calls]; },
+    /** Sweeps the aim 1 m sideways for 1.5 s, as the user is asked to, then rests at (1, 0, 2). Returns the end time. */
+    sweepFloor(start = 0) {
+      for (let i = 0; i < 90; i += 1) { world.at = { x: i / 90, y: 0, z: 2 }; loop?.(start + i * FRAME_MS, frame); }
+      world.at = { x: 1, y: 0, z: 2 };
+      return start + 90 * FRAME_MS;
+    },
+    /** Holds the aim still for a second. Returns the end time. */
+    hold(start: number) {
+      for (let i = 0; i < 60; i += 1) loop?.(start + i * FRAME_MS, frame);
+      return start + 60 * FRAME_MS;
+    },
     tickWithoutFrame() { calls.length = 0; if (loop) Reflect.apply(loop, undefined, [0]); return [...calls]; },
     setVisibility(state: XRVisibilityState) { session.visibilityState = state; listeners.get('visibilitychange')?.(); },
   };
 }
+
+const FRAME_MS = 1000 / 60;
 
 const START_ORDER = ['request', 'add:end', 'add:visibilitychange', 'add:select', 'space:viewer', 'hit-source', 'set-session', 'floor-space', 'active', 'loop:on'];
 
@@ -250,16 +264,100 @@ test('capability comes only from the secure context and isSessionSupported', asy
 });
 
 test('with a stabilizer, marking waits until the floor is learned and the aim holds still', async () => {
-  const harness = createHarness({ stabilizer: createHitStabilizer() });
+  const locked: boolean[] = [];
+  const harness = createHarness({ stabilizer: createHitStabilizer(), onFloorLockedChange: (next) => locked.push(next) });
   await harness.controller.start();
   harness.tick(0);
   assert.equal(harness.reticle.visible, true);
   assert.equal(harness.controller.tracking(), 'searching');
   assert.equal(harness.controller.currentHit(), null);
-  for (let i = 1; i <= 60; i += 1) harness.tick(i * 1000 / 60);
+  // Holding still never teaches the floor.
+  const t = harness.hold(FRAME_MS);
+  assert.equal(harness.controller.tracking(), 'searching');
+  assert.deepEqual(locked, []);
+  harness.hold(harness.sweepFloor(t + 3000));
+  assert.deepEqual(locked, [true]);
   assert.equal(harness.controller.tracking(), 'surface');
   const hit = harness.controller.currentHit();
   assert.ok(hit && Math.abs(hit.x - 1) < 1e-9 && hit.y === 0 && Math.abs(hit.z - 2) < 1e-9);
+  assert.equal(harness.world.floorY, 0);
+});
+
+test('with a stabilizer, a wall in front blocks the aim even with floor behind it', async () => {
+  const hints: string[] = [];
+  const harness = createHarness({ stabilizer: createHitStabilizer(), onFloorHintChange: (hint) => hints.push(hint) });
+  await harness.controller.start();
+  const t = harness.hold(harness.sweepFloor());
+  assert.equal(harness.controller.tracking(), 'surface');
+  (harness.frame as unknown as Record<string, unknown>).getHitTestResults = () => [
+    { getPose: () => ({ transform: { position: { x: 1, y: 1, z: 1 }, orientation: WALL_ORIENTATION } }) },
+    { getPose: () => ({ transform: { position: { x: 1, y: 0, z: 2 }, orientation: FLOOR_ORIENTATION } }) },
+  ];
+  harness.hold(t);
+  assert.equal(harness.controller.currentHit(), null);
+  assert.equal(harness.reticle.visible, false);
+  assert.equal(harness.controller.tracking(), 'searching');
+  assert.equal(hints.at(-1), 'blocked');
+});
+
+test('learning the floor again forgets the height, keeps the session, and reports the new one', async () => {
+  const locked: boolean[] = [];
+  const harness = createHarness({ stabilizer: createHitStabilizer(), onFloorLockedChange: (next) => locked.push(next) });
+  await harness.controller.start();
+  let t = harness.hold(harness.sweepFloor());
+  assert.equal(harness.world.floorY, 0);
+  harness.calls.length = 0;
+  harness.controller.relearnFloor();
+  assert.deepEqual(harness.calls, [], 'no session call: nothing is restarted');
+  assert.equal(harness.controller.currentHit(), null);
+  assert.deepEqual(locked, [true, false]);
+  // The real floor turns out 20 cm lower; what is drawn follows the height only.
+  for (let i = 0; i < 90; i += 1) { harness.world.at = { x: i / 90, y: -0.2, z: 2 }; harness.tick(t + i * FRAME_MS); }
+  t += 90 * FRAME_MS;
+  assert.deepEqual(locked, [true, false, true]);
+  assert.equal(harness.world.floorY, -0.2);
+  harness.hold(t);
+  const hit = harness.controller.currentHit();
+  assert.ok(hit && Math.abs(hit.y + 0.2) < 1e-9);
+  await harness.controller.finish(true);
+  assert.equal(harness.world.floorY, null);
+  assert.deepEqual(locked, [true, false, true, false]);
+});
+
+test('entity types are requested for the hit-test source, with the default source as fallback', async () => {
+  const seen: (XRHitTestOptionsInit | undefined)[] = [];
+  const accepting = createHarness({ hitEntityTypes: ['plane', 'point'] });
+  const original = accepting.session.requestHitTestSource;
+  accepting.session.requestHitTestSource = async (options) => { seen.push(options); return original(options); };
+  await accepting.controller.start();
+  assert.deepEqual(seen.map((options) => options?.entityTypes), [['plane', 'point']]);
+  assert.deepEqual(accepting.calls, START_ORDER);
+
+  const refused: (XRHitTestOptionsInit | undefined)[] = [];
+  const refusing = createHarness({ hitEntityTypes: ['plane', 'point'] });
+  const fallback = refusing.session.requestHitTestSource;
+  refusing.session.requestHitTestSource = async (options) => {
+    refused.push(options);
+    if (options?.entityTypes) throw new TypeError('entityTypes');
+    return fallback(options);
+  };
+  await refusing.controller.start();
+  assert.deepEqual(refused.map((options) => options?.entityTypes), [['plane', 'point'], undefined]);
+  assert.deepEqual(refusing.calls, START_ORDER);
+});
+
+test('debug info reports the floor, the point source and the anchors', async () => {
+  const seen: { floorY: number | null; source: string; anchors: number; entityTypes: boolean }[] = [];
+  const harness = createHarness({ stabilizer: createHitStabilizer(), onDebug: (info) => seen.push(info) });
+  await harness.controller.start();
+  harness.hold(harness.sweepFloor());
+  assert.ok(seen.length > 5);
+  assert.equal(seen[0].floorY, null);
+  const last = seen.at(-1)!;
+  assert.equal(last.floorY, 0);
+  assert.equal(last.source, 'hit');
+  assert.equal(last.anchors, 0);
+  assert.equal(last.entityTypes, false);
 });
 
 test('anchors and plane detection are requested as optional features only when asked', async () => {
@@ -298,9 +396,12 @@ test('with an anchor, a map correction moves the world root and keeps hits in th
   anchorAt.x = 1.2;
   frame.getHitTestResults = () => [{ getPose: () => ({ transform: { position: { x: 1.2, y: 0, z: 2 }, orientation: FLOOR_ORIENTATION } }) }];
   harness.tick();
+  // The correction is eased in, not applied in one frame.
+  assert.ok(harness.world.root.x > 0 && harness.world.root.x < 0.05, String(harness.world.root.x));
+  for (let i = 0; i < 60; i += 1) harness.tick();
   const hit = harness.controller.currentHit();
-  assert.ok(hit && Math.abs(hit.x - 1) < 1e-9 && Math.abs(hit.z - 2) < 1e-9);
-  assert.ok(Math.abs(harness.world.root.x - 0.2) < 1e-9);
+  assert.ok(hit && Math.abs(hit.x - 1) <= 0.02 && Math.abs(hit.z - 2) < 1e-9, JSON.stringify(hit));
+  assert.ok(Math.abs(harness.world.root.x - 0.2) <= 0.02, String(harness.world.root.x));
   assert.equal(created, 1);
 
   await harness.controller.finish(true);
@@ -330,12 +431,13 @@ test('floor hints follow the stabilizer and clear when tracking is lost', async 
   await harness.controller.start();
   harness.tick(0);
   assert.deepEqual(hints, ['scan']);
-  for (let i = 1; i <= 60; i += 1) harness.tick(i * 1000 / 60);
+  let t = harness.sweepFloor(FRAME_MS);
   assert.deepEqual(hints, ['scan', 'none']);
   harness.world.hit = false;
-  for (let i = 61; i <= 200; i += 1) harness.tick(i * 1000 / 60);
+  for (let i = 0; i < 140; i += 1) harness.tick(t + i * FRAME_MS);
+  t += 140 * FRAME_MS;
   assert.deepEqual(hints, ['scan', 'none', 'aim-floor']);
   harness.world.pose = false;
-  harness.tick(4000);
+  harness.tick(t);
   assert.deepEqual(hints, ['scan', 'none', 'aim-floor', 'none']);
 });

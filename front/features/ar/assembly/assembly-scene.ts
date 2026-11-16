@@ -68,6 +68,17 @@ export function createAssemblyScene(canvas: HTMLCanvasElement): AssemblyScene {
   layers.root.add(preview);
   const labels = createMeasureLabels(layers.root);
 
+  // The session reports the floor height as it learns or corrects it; until then the
+  // height of the first mark is used. Only the height moves, never the plan on the floor.
+  let alignment: SessionAlignmentState | null = null;
+  let sessionFloorY: number | null = null;
+  const placeOnFloor = () => {
+    if (!alignment) return;
+    const pose = projectRootPose(alignment.transform, (sessionFloorY ?? alignment.floorY) + FLOOR_LIFT_METERS);
+    layers.root.position.set(pose.position.x, pose.position.y, pose.position.z);
+    layers.root.rotation.set(0, pose.rotationY, 0);
+  };
+
   const resize = () => {
     if (renderer.xr.isPresenting) return;
     const width = Math.max(canvas.clientWidth, 1);
@@ -89,14 +100,17 @@ export function createAssemblyScene(canvas: HTMLCanvasElement): AssemblyScene {
       reticle.material.opacity = stable ? 1 : RETICLE_SETTLING_OPACITY + (0.9 - RETICLE_SETTLING_OPACITY) * Math.min(Math.max(progress, 0), 1);
       aimDot.visible = stable;
     },
-    sync: (view, alignment) => {
+    setFloorY: (floorY) => {
+      if (floorY === sessionFloorY) return;
+      sessionFloorY = floorY;
+      placeOnFloor();
+    },
+    sync: (view, next) => {
       layers.sync(view);
       labels.setSegments([...consecutive(view.scene?.environment.perimeter ?? [], true), ...consecutive(view.draft, false)]);
+      alignment = next;
       layers.root.visible = alignment !== null;
-      if (!alignment) return;
-      const pose = projectRootPose(alignment.transform, alignment.floorY + FLOOR_LIFT_METERS);
-      layers.root.position.set(pose.position.x, pose.position.y, pose.position.z);
-      layers.root.rotation.set(0, pose.rotationY, 0);
+      placeOnFloor();
     },
     setPreview: (from, to) => {
       preview.visible = Boolean(from && to);

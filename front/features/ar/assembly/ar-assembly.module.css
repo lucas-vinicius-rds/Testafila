@@ -35,6 +35,9 @@
 .toolActive { border: 1px solid var(--green, #214b40); background: var(--green, #214b40); color: var(--on-green, #ffffff); }
 .danger { border: 1px solid var(--alert, #9b3f31); background: transparent; color: var(--alert, #9b3f31); }
 .quiet { border: 0; background: transparent; color: var(--muted, #606963); }
+/* Recovery action in the top bar: easy to reach, never competing with the main button. */
+.link { align-self: flex-start; min-height: 44px; margin-left: -8px; padding: 0 8px; border: 0; border-radius: 2px; background: transparent; color: var(--green, #214b40); font-size: 14px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.debug { margin: 4px 0 0; padding: 6px 8px; background: var(--surface, #e8ece4); color: var(--ink, #242d29); font: 11px/1.4 Consolas, 'Courier New', monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .primary:disabled, .secondary:disabled, .wide:disabled { cursor: not-allowed; opacity: .48; }
-.primary:focus-visible, .secondary:focus-visible, .wide:focus-visible, .danger:focus-visible, .quiet:focus-visible, .tool:focus-visible, .toolActive:focus-visible { outline: none; box-shadow: var(--focus, 0 0 0 3px rgba(33, 75, 64, .24)); }
+.primary:focus-visible, .secondary:focus-visible, .wide:focus-visible, .danger:focus-visible, .quiet:focus-visible, .link:focus-visible, .tool:focus-visible, .toolActive:focus-visible { outline: none; box-shadow: var(--focus, 0 0 0 3px rgba(33, 75, 64, .24)); }
 .choice { flex: 1 1 0; min-height: 56px; border: 1px solid var(--green, #214b40); border-radius: 2px; background: var(--green, #214b40); color: var(--on-green, #ffffff); font-size: 15px; font-weight: 600; cursor: pointer; }

@@ -121,6 +121,12 @@ test('montagem AR real com sessão simulada entrega planta ao editor e salva web
   await page.addInitScript({ path: fileURLToPath(new URL('../../features/ar/testing/fake-xr.js', import.meta.url)) });
   await page.goto('/projects/new');
   await page.getByRole('button', { name: 'Começar a medir', exact: true }).click();
+  // O piso só é aprendido com a mira varrendo o chão por cerca de um segundo; mira parada não basta.
+  for (let step = 0; step <= 14; step += 1) {
+    await page.evaluate((x) => { (window as any).__xr.hit = { x, y: 0, z: 1 }; }, step / 14);
+    await page.waitForTimeout(120);
+  }
+  await expect(page.getByRole('button', { name: 'Medir o chão de novo', exact: true })).toBeVisible();
   for (const [x, z] of [[1, 1], [11, 1], [11, 9], [1, 9]]) {
     await page.evaluate(([x, z]) => { (window as any).__xr.hit = { x, y: 0, z }; }, [x, z]);
     await settled(page); await page.getByRole('button', { name: 'Marcar canto', exact: true }).click();

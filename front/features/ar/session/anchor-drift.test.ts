@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fitDrift, NO_DRIFT, toRaw, toStable, type Drift } from './anchor-drift.ts';
+import { createDriftFilter, DEFAULT_DRIFT_FILTER, fitDrift, NO_DRIFT, toRaw, toStable, type Drift } from './anchor-drift.ts';
 
 const near = (a: number, b: number, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
 const p = (x: number, z: number, y = 0) => ({ x, y, z });
@@ -27,6 +27,56 @@ test('anchors bunched together do not produce a rotation', () => {
   const bases = [p(5, 5), p(5.2, 5.1)];
   const drift = fitDrift(bases.map((base) => ({ base, current: toRaw(truth, base) })));
   assert.equal(drift.rotationRadians, 0);
+});
+
+test('two anchors, however far apart, do not produce a rotation', () => {
+  const truth: Drift = { dx: 0, dy: 0, dz: 0, rotationRadians: 0.05 };
+  const bases = [p(0, 0), p(6, 0)];
+  const drift = fitDrift(bases.map((base) => ({ base, current: toRaw(truth, base) })));
+  assert.equal(drift.rotationRadians, 0);
+});
+
+test('three anchors less than two metres across do not produce a rotation', () => {
+  const truth: Drift = { dx: 0, dy: 0, dz: 0, rotationRadians: 0.05 };
+  const bases = [p(0, 0), p(0.8, 0), p(0.4, 0.7)];
+  const drift = fitDrift(bases.map((base) => ({ base, current: toRaw(truth, base) })));
+  assert.equal(drift.rotationRadians, 0);
+});
+
+const at = (dx: number, rotationRadians = 0): Drift => ({ dx, dy: 0, dz: 0, rotationRadians });
+
+test('the filter ignores corrections within the anchor noise', () => {
+  const f = createDriftFilter();
+  for (let i = 0; i < 100; i += 1) assert.equal(f.update(at(i % 2 ? 0.015 : -0.015, 0.005)), NO_DRIFT);
+});
+
+test('the filter eases into a real correction instead of jumping', () => {
+  const f = createDriftFilter();
+  const first = f.update(at(0.2));
+  near(first.dx, 0.2 * DEFAULT_DRIFT_FILTER.smoothing);
+  let last = first;
+  for (let i = 0; i < 60; i += 1) last = f.update(at(0.2));
+  assert.ok(Math.abs(last.dx - 0.2) <= DEFAULT_DRIFT_FILTER.deadbandMeters, String(last.dx));
+});
+
+test('the filter waits out a sudden jump and follows it only if it persists', () => {
+  const f = createDriftFilter();
+  // A one-off bad reading of 1 m.
+  assert.equal(f.update(at(1)), NO_DRIFT);
+  assert.equal(f.update(at(0)), NO_DRIFT);
+  // A relocalization: the same 1 m, frame after frame.
+  let last = NO_DRIFT;
+  for (let i = 0; i < DEFAULT_DRIFT_FILTER.jumpFrames - 1; i += 1) last = f.update(at(1));
+  assert.equal(last, NO_DRIFT);
+  for (let i = 0; i < 80; i += 1) last = f.update(at(1));
+  assert.ok(Math.abs(last.dx - 1) <= DEFAULT_DRIFT_FILTER.deadbandMeters, String(last.dx));
+});
+
+test('reset returns the filter to no drift', () => {
+  const f = createDriftFilter();
+  f.update(at(0.2));
+  f.reset();
+  assert.equal(f.update(at(0.01)), NO_DRIFT);
 });
 
 test('toStable undoes toRaw, and distances are preserved (no scale)', () => {

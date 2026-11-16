@@ -1,8 +1,9 @@
 import type * as THREE from 'three';
 import { horizontalHitPoint, type XrPoint } from '../xr-check/xr-check-logic.ts';
-import { fitDrift, NO_DRIFT, toRaw, toStable, type AnchorPair, type Drift } from './anchor-drift.ts';
+import { createDriftFilter, fitDrift, NO_DRIFT, toRaw, toStable, type AnchorPair, type Drift } from './anchor-drift.ts';
 import { createFloorGuidance, type XrFloorHint } from './floor-guidance.ts';
-import type { HitStabilizer, XrRay } from './hit-stabilizer.ts';
+import { nearestSurface } from './hit-classify.ts';
+import type { HitSource, HitStabilizer, XrRay } from './hit-stabilizer.ts';
 
 export type XrTracking = 'inactive' | 'searching' | 'surface' | 'lost' | 'hidden';
 
@@ -18,6 +19,30 @@ export type XrSessionRuntime = Readonly<{
   worldRoot?: THREE.Object3D;
   /** Feedback on the reticle: 0..1 while the aim settles, `stable` once it can be marked. */
   setAim?: (progress: number, stable: boolean) => void;
+  /**
+   * With a stabilizer: the floor height the work should be drawn at, in the frame of
+   * `worldRoot`, whenever it is known; null when the session ends. Only the height
+   * changes, never where things are on the floor.
+   */
+  setFloorY?: (floorY: number | null) => void;
+}>;
+
+/** A few times per second, for an on-screen readout while testing on a device. */
+export type XrDebugInfo = Readonly<{
+  floorY: number | null;
+  /** Camera height above the locked floor. */
+  cameraHeight: number | null;
+  source: HitSource;
+  relearning: boolean;
+  /** Hit-test results this frame. */
+  hits: number;
+  planeY: number | null;
+  anchors: number;
+  drift: Drift;
+  /** Features the session reports as enabled, when the browser tells. */
+  features: readonly string[] | null;
+  /** Whether the hit-test source accepted the requested entity types. */
+  entityTypes: boolean;
 }>;
 
 /**
@@ -67,6 +92,14 @@ export type XrSessionOptions = Readonly<{
   planes?: boolean;
   /** Needs `stabilizer`. Reports what to tell the user about finding the floor. */
   onFloorHintChange?: (hint: XrFloorHint) => void;
+  /** Needs `stabilizer`. Reports when the floor height becomes known or is forgotten. */
+  onFloorLockedChange?: (locked: boolean) => void;
+  /**
+   * Also hit-tests against these, so an object the device has no plane for still
+   * blocks the aim. Falls back to the default source when the browser refuses.
+   */
+  hitEntityTypes?: readonly XRHitTestTrackableType[];
+  onDebug?: (info: XrDebugInfo) => void;
 }>;
 
 export type XrSessionController = Readonly<{
@@ -84,6 +117,11 @@ export type XrSessionController = Readonly<{
   tracking: () => XrTracking;
   /** Latest floor hit, or null while tracking is lost or the session is hidden. */
   currentHit: () => XrPoint | null;
+  /**
+   * With a stabilizer: forgets the floor height and learns it again. What was
+   * already placed keeps its position and follows the new height once it is known.
+   */
+  relearnFloor: () => void;
 }>;
 
 export class DomOverlayUnavailableError extends Error {
@@ -98,6 +136,7 @@ const MAX_ANCHORS = 6;
 const ANCHOR_SPACING_METERS = 2;
 const FLOOR_PLANE_MIN_AREA_M2 = 1.5;
 const PLANE_SCAN_EVERY_FRAMES = 15;
+const DEBUG_EVERY_FRAMES = 15;
 
 type TrackedAnchor = { anchor: XRAnchor; base: XrPoint | null };
 
@@ -161,8 +200,17 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
   let anchorPending = false;
   let anchorsUnavailable = false;
   let drift: Drift = NO_DRIFT;
+  const driftFilter = createDriftFilter();
   let planeY: number | null = null;
   let frameCount = 0;
+  let floorLocked = false;
+  let entityTypesAccepted = false;
+
+  const setFloorLocked = (next: boolean) => {
+    if (floorLocked === next) return;
+    floorLocked = next;
+    options.onFloorLockedChange?.(next);
+  };
 
   const setFloorHint = (next: XrFloorHint) => {
     if (floorHint === next) return;
@@ -186,6 +234,7 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
     anchorsUnavailable = false;
     planeY = null;
     frameCount = 0;
+    driftFilter.reset();
     applyDrift(NO_DRIFT);
   };
 
@@ -205,7 +254,8 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
       entry.base ??= toStable(drift, current);
       pairs.push({ base: entry.base, current });
     }
-    if (pairs.length) applyDrift(fitDrift(pairs));
+    // Filtered: raw anchor poses carry noise that would shake everything placed.
+    if (pairs.length) applyDrift(driftFilter.update(fitDrift(pairs)));
   };
 
   /** Anchors spread over the floor: each new one at least ANCHOR_SPACING_METERS from the rest. */
@@ -257,6 +307,7 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
     options.stabilizer?.reset();
     guidance?.reset();
     setFloorHint('none');
+    setFloorLocked(false);
     dropAnchors();
     latestHit = null;
     activeSession = null;
@@ -264,6 +315,7 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
     if (runtime) {
       runtime.renderer.setAnimationLoop(null);
       runtime.reticle.visible = false;
+      runtime.setFloorY?.(null);
     }
     options.onFinished?.();
     setTracking('inactive');
@@ -303,27 +355,52 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
 
     if (options.anchors) updateDrift(frame, space);
     if (options.planes && frameCount % PLANE_SCAN_EVERY_FRAMES === 0) planeY = lowestFloorPlaneY(frame, space);
-    frameCount += 1;
 
     let hit: XrPoint | null = null;
     let hitResult: XRHitTestResult | null = null;
-    for (const result of frame.getHitTestResults(source)) {
-      hit = horizontalHitPoint(result.getPose(space));
-      if (hit) { hitResult = result; break; }
-    }
-    let ready = Boolean(hit);
-    let shown = hit;
+    const results = frame.getHitTestResults(source);
+    let ready: boolean;
+    let shown: XrPoint | null;
     if (options.stabilizer) {
-      const result = options.stabilizer.update(hit, viewerRay(viewerPose), timeMs, planeY);
+      // Only the nearest surface counts: the floor behind a wall or a cabinet is out of reach.
+      const surface = nearestSurface(results.map((result) => result.getPose(space)));
+      if (surface.floorHit) hitResult = results[surface.floorIndex];
+      const ray = viewerRay(viewerPose);
+      const result = options.stabilizer.update(surface.floorHit, ray, timeMs, planeY, surface.obstacle);
+      const known = result.floorY !== null && !result.relearning;
       runtime.reticle.visible = Boolean(result.point);
       if (result.point) runtime.reticle.position.set(result.point.x, result.point.y + RETICLE_LIFT_METERS, result.point.z);
       runtime.setAim?.(result.progress, result.stable);
-      if (guidance) setFloorHint(guidance.update({ floorLocked: result.floorY !== null, hasPoint: Boolean(result.point), timeMs }));
+      if (result.floorY !== null) runtime.setFloorY?.(result.floorY - drift.dy);
+      setFloorLocked(known);
+      if (guidance) setFloorHint(guidance.update({ floorLocked: known, hasPoint: Boolean(result.point), timeMs, blocked: result.source === 'blocked' }));
       // The preview follows the smoothed point; marking waits for a stable one.
       shown = result.point;
       hit = result.stable ? result.point : null;
       ready = result.stable;
+      // An anchor belongs on a measured floor hit, never on a point the camera ray stood in for.
+      if (result.source !== 'hit') hitResult = null;
+      if (options.onDebug && frameCount % DEBUG_EVERY_FRAMES === 0) {
+        options.onDebug({
+          floorY: result.floorY,
+          cameraHeight: ray && result.floorY !== null ? ray.origin.y - result.floorY : null,
+          source: result.source,
+          relearning: result.relearning,
+          hits: results.length,
+          planeY,
+          anchors: anchors.length,
+          drift,
+          features: session.enabledFeatures ?? null,
+          entityTypes: entityTypesAccepted,
+        });
+      }
     } else {
+      for (const result of results) {
+        hit = horizontalHitPoint(result.getPose(space));
+        if (hit) { hitResult = result; break; }
+      }
+      ready = Boolean(hit);
+      shown = hit;
       runtime.reticle.visible = Boolean(hit);
       if (hit) runtime.reticle.position.set(hit.x, hit.y + RETICLE_LIFT_METERS, hit.z);
     }
@@ -334,6 +411,7 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
       if (shown) shown = toStable(drift, shown);
     }
     latestHit = hit;
+    frameCount += 1;
     if (ready) {
       setTracking('surface');
     } else {
@@ -397,9 +475,21 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
 
       const viewerSpace = await session.requestReferenceSpace('viewer');
       if (activeSession !== session) return;
-      const hitTestRequest = session.requestHitTestSource?.({ space: viewerSpace });
-      if (!hitTestRequest) throw new Error('O navegador não implementa requestHitTestSource.');
-      const source = await hitTestRequest;
+      let source: XRHitTestSource | undefined;
+      entityTypesAccepted = false;
+      if (options.hitEntityTypes?.length && session.requestHitTestSource) {
+        // Optional: a browser that refuses the entity types gets the default source below.
+        try {
+          source = await session.requestHitTestSource({ space: viewerSpace, entityTypes: [...options.hitEntityTypes] });
+          entityTypesAccepted = Boolean(source);
+        } catch { source = undefined; }
+        if (activeSession !== session) { try { source?.cancel(); } catch { /* already canceled */ } return; }
+      }
+      if (!source) {
+        const hitTestRequest = session.requestHitTestSource?.({ space: viewerSpace });
+        if (!hitTestRequest) throw new Error('O navegador não implementa requestHitTestSource.');
+        source = await hitTestRequest;
+      }
       if (!source) throw new Error('O navegador não retornou uma fonte de hit-test.');
       if (activeSession !== session) {
         source.cancel();
@@ -436,5 +526,12 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
     isVisible: () => activeSession?.visibilityState === 'visible',
     tracking: () => tracking,
     currentHit: () => latestHit,
+    relearnFloor: () => {
+      if (!activeSession || !options.stabilizer) return;
+      options.stabilizer.reset();
+      guidance?.reset();
+      latestHit = null;
+      setFloorLocked(false);
+    },
   };
 }

@@ -5,7 +5,7 @@ import type { ProjectScene } from '@testafila/core/contracts/project';
 import { sessionPointToProject } from '@testafila/core/domain/measured-environment';
 import { canMarkCorner, closingWallMeters, floorDistanceMeters, formatMeters, MIN_CORNERS_TO_CLOSE, wallLengthsMeters } from '../floorplan/floorplan-capture-logic.ts';
 import { useArCapability } from '../session/use-ar-capability.ts';
-import { DomOverlayUnavailableError, createXrSessionController, type XrTracking } from '../session/xr-session.ts';
+import { DomOverlayUnavailableError, createXrSessionController, type XrDebugInfo, type XrTracking } from '../session/xr-session.ts';
 import { createAssemblyScene, type AssemblyScene } from './assembly-scene.ts';
 import type { XrFloorHint } from '../session/floor-guidance.ts';
 import { createHitStabilizer } from '../session/hit-stabilizer.ts';
@@ -38,9 +38,26 @@ const trackingProblem: Partial<Record<XrTracking, string>> = {
 
 const floorHintText: Partial<Record<XrFloorHint, string>> = {
   scan: 'Aponte para o chão e mova o celular devagar para os lados, até o círculo firmar.',
-  'scan-slow': 'Está difícil achar o chão. Procure um lugar mais claro e aponte para um piso com textura, sem reflexo.',
+  'scan-slow': 'Está difícil achar o chão. Mova o celular devagar para os lados, num lugar claro e sobre um piso com textura, sem reflexo.',
+  blocked: 'Há uma parede ou um objeto na mira. Aponte para o chão livre.',
   'aim-floor': 'Aponte o celular para o chão.',
 };
+
+/** Hints that still matter while adding people, when the reticle is not in use. */
+const floorLearningHints: ReadonlySet<XrFloorHint> = new Set(['scan', 'scan-slow']);
+
+const meters = (value: number | null) => (value === null ? '—' : `${value.toFixed(2)} m`);
+
+/** On-screen readout for device testing, shown with `?debug=1`. */
+function debugText(info: XrDebugInfo): string {
+  const { drift } = info;
+  return [
+    `piso ${meters(info.floorY)} · câmera ${meters(info.cameraHeight)} acima${info.relearning ? ' · reaprendendo' : ''}`,
+    `ponto ${info.source} · acertos ${info.hits} · plano ${meters(info.planeY)}`,
+    `âncoras ${info.anchors} · correção ${(Math.hypot(drift.dx, drift.dz) * 100).toFixed(1)} cm, altura ${(drift.dy * 100).toFixed(1)} cm, giro ${((drift.rotationRadians * 180) / Math.PI).toFixed(2)}°`,
+    `recursos ${info.features ? info.features.join(', ') : 'não informados'} · pontos de textura ${info.entityTypes ? 'sim' : 'não'}`,
+  ].join('\n');
+}
 
 function stepGuidance(state: AssemblyState): string {
   if (needsRealignment(state)) return `Encontre no chão o canto ${state.realignMarks.length + 1} da planta e marque.`;
@@ -90,6 +107,9 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const liveMeasureRef = useRef<HTMLParagraphElement | null>(null);
+  const debugRef = useRef<HTMLPreElement | null>(null);
+  // Loaded without SSR, so the address is available on the first render.
+  const [debug] = useState(() => new URLSearchParams(window.location.search).get('debug') === '1');
   const sceneRef = useRef<AssemblyScene | null>(null);
   const selectHandlerRef = useRef<() => void>(() => undefined);
   const aimedPostRef = useRef<string | null>(null);
@@ -104,6 +124,7 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
   const [starting, setStarting] = useState(false);
   const [tracking, setTracking] = useState<XrTracking>('inactive');
   const [floorHint, setFloorHint] = useState<XrFloorHint>('none');
+  const [floorLocked, setFloorLocked] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
   const [startFailure, setStartFailure] = useState<string | null>(null);
   const [planChoice, setPlanChoice] = useState(false);
@@ -137,7 +158,11 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
     stabilizer: createHitStabilizer(),
     anchors: true,
     planes: true,
+    // Feature points too, so a cabinet the device has no plane for still blocks the aim.
+    hitEntityTypes: ['plane', 'point'],
     onFloorHintChange: setFloorHint,
+    onFloorLockedChange: setFloorLocked,
+    onDebug: debug ? (info) => { if (debugRef.current) debugRef.current.textContent = debugText(info); } : undefined,
     onTrackingChange: setTracking,
     onActive: () => setSessionActive(true),
     onFinished: () => {
@@ -282,8 +307,10 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
         <p className={styles.step}>{realigning ? 'Alinhar de novo' : `Etapa ${stepIndex + 1} de ${ASSEMBLY_STEPS.length} · ${stepNames[state.step]}`}</p>
         <button type="button" className={styles.quiet} onClick={requestExit}>Sair</button>
       </div>
-      <p className={suspended ? styles.warning : styles.guidance} role="status" aria-live="polite">{trackingProblem[tracking] ?? (appending ? undefined : floorHintText[floorHint]) ?? stepGuidance(state)}</p>
+      <p className={suspended ? styles.warning : styles.guidance} role="status" aria-live="polite">{trackingProblem[tracking] ?? (appending && !floorLearningHints.has(floorHint) ? undefined : floorHintText[floorHint]) ?? stepGuidance(state)}</p>
       <p ref={liveMeasureRef} className={styles.liveMeasure} aria-hidden="true" />
+      {floorLocked && !suspended && <button type="button" className={styles.link} onClick={() => xrSession.relearnFloor()}>Medir o chão de novo</button>}
+      {debug && <pre ref={debugRef} className={styles.debug} aria-hidden="true" />}
       {state.realignDifferenceMeters !== null && !realigning && <p className={styles.guidance}>Diferença entre a planta e o chão: {formatMeters(Math.abs(state.realignDifferenceMeters))}</p>}
     </div>
     <div className={styles.panel}>
