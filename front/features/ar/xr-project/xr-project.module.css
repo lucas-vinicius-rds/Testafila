@@ -20,14 +20,53 @@
 .ok { color: var(--green, #214b40); font-weight: 600; }
 .metric { color: var(--green, #214b40); font-variant-numeric: tabular-nums; }
 .primary, .secondary, .point, .pointSelected { min-height: 44px; border: 1px solid var(--green, #214b40); border-radius: 2px; padding: 0 13px; font-size: 12px; font-weight: 650; cursor: pointer; }
-.primary { background: var(--green, #214b40); color: #fff; }
+.primary { background: var(--green, #214b40); color: var(--on-green, #ffffff); }
 .secondary, .point { background: transparent; color: var(--green, #214b40); }
-.pointSelected { background: #e8ece4; color: var(--green, #214b40); }
-.primary:disabled, .point:disabled, .pointSelected:disabled { cursor: not-allowed; opacity: .48; }
-.pointList { display: grid; gap: 7px; max-height: 182px; overflow: auto; }
-.point, .pointSelected { min-height: 38px; text-align: left; }
-.actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.actions h2 { width: 100%; }
+.pointSelected { background: var(--green, #214b40); color: var(--on-green, #ffffff); }
+.primary:disabled, .secondary:disabled, .point:disabled, .pointSelected:disabled { cursor: not-allowed; opacity: .48; }
 .caution { padding: 11px; border-left: 2px solid var(--green, #214b40); background: #f5f4ef; color: var(--muted, #606963); font-size: 11px; }
 .error { color: var(--alert, #9b3f31); }
-@media (max-width: 720px) { .header { min-height: 88px; align-items: flex-start; justify-content: center; flex-direction: column; gap: 0; } .layout { grid-template-columns: 1fr; } .viewport { min-height: 280px; height: min(52vh, 390px); } .controls { padding: 16px; } }
+
+/* Session overlay. The browser shows this element fullscreen and transparent over the
+   camera. Only the two bars are opaque; taps between them reach nothing on the page. */
+.overlayActive { display: flex; flex-direction: column; justify-content: space-between; min-width: 0; min-height: 100dvh; margin: 0; padding: 0; border: 0; background: transparent; color: var(--ink, #242d29); }
+.topBar { flex: none; display: flex; flex-direction: column; gap: 2px; padding: calc(4px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) 10px calc(16px + env(safe-area-inset-left)); border-bottom: 1px solid var(--line, #d8dcd4); background: var(--white, #fffefa); }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.step { margin: 0; color: var(--green, #214b40); font-size: 16px; font-weight: 650; line-height: 1.3; }
+.guidance, .warning { margin: 0; font-size: 14px; line-height: 1.45; }
+.guidance { color: var(--muted, #606963); }
+.warning { color: var(--alert, #9b3f31); font-weight: 600; }
+.quiet { flex: none; min-height: 48px; margin-right: -12px; padding: 0 12px; border: 0; background: transparent; color: var(--muted, #606963); font-size: 16px; font-weight: 650; cursor: pointer; }
+.panel { flex: 0 1 auto; display: flex; flex-direction: column; gap: 8px; min-height: 0; max-height: 56dvh; overflow-y: auto; overscroll-behavior: contain; padding: 12px calc(16px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); border-top: 1px solid var(--line, #d8dcd4); background: var(--white, #fffefa); }
+.panel > * { flex: none; }
+.panel .primary, .panel .secondary { min-height: 48px; font-size: 16px; }
+.panel .error { font-size: 14px; font-weight: 600; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.metrics { display: grid; gap: 2px; }
+.metrics .metric { font-size: 14px; }
+/* One row of corners that scrolls sideways, so the list never grows over the camera. */
+.pointList { display: flex; gap: 8px; margin: 0 -16px; padding: 0 16px 2px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+.pointList::-webkit-scrollbar { display: none; }
+.pointList .point, .pointList .pointSelected { flex: none; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 1px; min-height: 48px; font-size: 14px; white-space: nowrap; }
+.pointList span { font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; opacity: .8; }
+.primary:focus-visible, .secondary:focus-visible, .point:focus-visible, .pointSelected:focus-visible, .quiet:focus-visible { outline: none; box-shadow: var(--focus, 0 0 0 3px rgba(33, 75, 64, .24)); }
+
+/* Phone lying on its side: a bottom panel would cover the floor, so it becomes a side column. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .overlayActive { flex-direction: row; align-items: flex-start; }
+  .topBar { flex: 1 1 0; min-width: 0; border-right: 1px solid var(--line, #d8dcd4); }
+  .panel { flex: none; align-self: stretch; width: min(38%, 340px); max-height: none; padding-top: calc(12px + env(safe-area-inset-top)); padding-left: 16px; border-top: 0; }
+  .guidance, .warning { font-size: 13px; }
+}
+
+@media (max-width: 720px) {
+  .page { width: auto; margin: 0; padding: 0 calc(16px + env(safe-area-inset-right)) env(safe-area-inset-bottom) calc(16px + env(safe-area-inset-left)); }
+  .header { min-height: 0; padding: 12px 0; align-items: flex-start; justify-content: center; flex-direction: column; gap: 0; }
+  .back { max-width: 100%; overflow-wrap: anywhere; }
+  .intro { padding: 28px 0 22px; }
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 16px; padding-bottom: 32px; }
+  /* The start button comes before the empty preview, which only fills up inside the session. */
+  .controls { order: -1; padding: 16px; }
+  .controls .primary { min-height: 48px; font-size: 14px; }
+  .viewport { min-height: 160px; height: 30dvh; }
+}
