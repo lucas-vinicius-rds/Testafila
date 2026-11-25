@@ -180,18 +180,31 @@ export function XrProjectClient() {
     <section className={styles.intro}><p>VISUALIZAÇÃO DA PLANTA EM ESCALA NOMINAL</p><h1>Alinhar no <em>espaço físico</em></h1><span>A origem e a geometria salvas não são modificadas. Cada sessão pede novo alinhamento.</span></section>
     <section className={styles.layout}>
       <div className={styles.viewport}><canvas ref={canvasRef} className={styles.canvas} aria-label="Visualização WebAR da fila" />{!sessionActive && <p className={styles.canvasHint}>A visualização da planta aparece após o alinhamento em uma sessão AR compatível.</p>}</div>
-      <div ref={overlayRef} className={styles.controls}>
-        <section><h2>Disponibilidade</h2><p className={capability === 'supported' ? styles.ok : styles.muted}>{capabilityMessage}</p></section>
-        {!sessionActive ? <button type="button" className={styles.primary} disabled={capability !== 'supported' || !rendererReady || starting || candidates.length < 3} onClick={startSession}>{starting ? 'Iniciando sessão…' : 'Iniciar WebAR'}</button> : <>
-          <section><h2>Correspondência {Math.min(correspondences.length + 1, 3)} de 3</h2><p className={styles.muted}>Selecione um vértice da planta e toque no ponto físico correspondente.</p><div className={styles.pointList}>{candidates.map((point, index) => <button key={point.id} type="button" className={selectedPointIndex === index ? styles.pointSelected : styles.point} disabled={used(point)} onClick={() => setSelectedPointIndex(index)}>Canto {index + 1} · {point.x.toFixed(2)} × {point.z.toFixed(2)} m</button>)}</div></section>
-          <button type="button" className={styles.primary} disabled={!canMark} onClick={collectCurrentHit}>Registrar ponto {Math.min(correspondences.length + 1, 3)}</button>
-          <p className={tracking === 'surface' ? styles.ok : styles.muted}>{tracking === 'surface' ? 'Piso detectado. O ponto pode ser registrado.' : tracking === 'lost' ? 'Tracking perdido; registro suspenso.' : 'Procure uma superfície horizontal.'}</p>
-          {alignment && <section><h2>Conferência métrica</h2><p className={styles.metric}>Erro entre os dois pontos de ajuste: {alignment.fitDimensionErrorPercent.toFixed(2)}%</p>{correspondences.length >= 3 && <p className={styles.metric}>Resíduo máximo com o terceiro ponto: {alignment.maxResidualMeters.toFixed(2)} m</p>}<p className={styles.muted}>Os valores são observados nesta sessão. Nenhuma tolerância física foi validada ainda.</p></section>}
-          {correspondences.length >= 3 && !confirmed && <button type="button" className={styles.primary} onClick={confirmAlignment}>Confirmar visualização</button>}
-          {confirmed && <section className={styles.actions}><h2>Ajuste temporário</h2><button type="button" className={styles.secondary} onClick={() => rotate(-Math.PI / 36)}>Girar −5°</button><button type="button" className={styles.secondary} onClick={() => rotate(Math.PI / 36)}>Girar +5°</button></section>}
-          <button type="button" className={styles.secondary} onClick={resetAlignment}>Reiniciar alinhamento</button><button type="button" className={styles.secondary} onClick={() => xrSession.finish(true)}>Encerrar sessão</button>
+      <div ref={overlayRef} className={sessionActive ? styles.controlsActive : styles.controls}>
+        {!sessionActive ? <>
+          <section><h2>Disponibilidade</h2><p className={capability === 'supported' ? styles.ok : styles.muted}>{capabilityMessage}</p></section>
+          <button type="button" className={styles.primary} disabled={capability !== 'supported' || !rendererReady || starting || candidates.length < 3} onClick={startSession}>{starting ? 'Iniciando sessão…' : 'Iniciar WebAR'}</button>
+          <p className={styles.caution}>Use HTTPS e aparelho compatível. A visualização é experimental e não substitui medição com trena ou validação física.</p>
+          {error && <p className={styles.error} role="alert">{error}</p>}
+        </> : <>
+          {/* Na sessão, este é o overlay em tela cheia e transparente: controles nas bordas, centro livre para a mira. */}
+          <div className={styles.liveTop}>
+            <h2>{correspondences.length < 3 ? `Correspondência ${correspondences.length + 1} de 3` : confirmed ? 'Planta alinhada' : 'Três pontos registrados'}</h2>
+            {correspondences.length < 3 && <>
+              <p className={styles.muted}>Escolha o canto da planta e aponte o círculo para ele no chão.</p>
+              <div className={styles.pointList}>{candidates.map((point, index) => <button key={point.id} type="button" className={selectedPointIndex === index ? styles.pointSelected : styles.point} disabled={used(point)} aria-pressed={selectedPointIndex === index} onClick={() => setSelectedPointIndex(index)}>Canto {index + 1}<span>{point.x.toFixed(2)} × {point.z.toFixed(2)} m</span></button>)}</div>
+            </>}
+            <p className={tracking === 'surface' ? styles.ok : tracking === 'lost' ? styles.error : styles.muted} role="status" aria-live="polite">{tracking === 'surface' ? 'Piso detectado. O ponto pode ser registrado.' : tracking === 'lost' ? 'Tracking perdido; registro suspenso.' : 'Procure uma superfície horizontal.'}</p>
+          </div>
+          <div className={styles.liveBottom}>
+            {alignment && <p className={styles.metric}>Erro de ajuste: {alignment.fitDimensionErrorPercent.toFixed(2)}%{correspondences.length >= 3 && ` · resíduo do 3º ponto: ${alignment.maxResidualMeters.toFixed(2)} m`}</p>}
+            {error && <p className={styles.error} role="alert">{error}</p>}
+            {correspondences.length < 3 && <button type="button" className={styles.primary} disabled={!canMark} onClick={collectCurrentHit}>Registrar ponto {correspondences.length + 1}</button>}
+            {correspondences.length >= 3 && !confirmed && <button type="button" className={styles.primary} onClick={confirmAlignment}>Confirmar visualização</button>}
+            {confirmed && <div className={styles.row}><button type="button" className={styles.secondary} onClick={() => rotate(-Math.PI / 36)}>Girar −5°</button><button type="button" className={styles.secondary} onClick={() => rotate(Math.PI / 36)}>Girar +5°</button></div>}
+            <div className={styles.row}><button type="button" className={styles.secondary} onClick={resetAlignment}>Reiniciar alinhamento</button><button type="button" className={styles.secondary} onClick={() => xrSession.finish(true)}>Encerrar sessão</button></div>
+          </div>
         </>}
-        <p className={styles.caution}>Use HTTPS e aparelho compatível. A visualização é experimental e não substitui medição com trena ou validação física.</p>{error && <p className={styles.error} role="alert">{error}</p>}
       </div>
     </section>
   </main>;

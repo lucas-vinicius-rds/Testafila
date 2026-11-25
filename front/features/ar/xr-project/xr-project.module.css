@@ -31,3 +31,19 @@
 .caution { padding: 11px; border-left: 2px solid var(--green, #214b40); background: #f5f4ef; color: var(--muted, #606963); font-size: 11px; }
 .error { color: var(--alert, #9b3f31); }
 @media (max-width: 720px) { .header { min-height: 88px; align-items: flex-start; justify-content: center; flex-direction: column; gap: 0; } .layout { grid-template-columns: 1fr; } .viewport { min-height: 280px; height: min(52vh, 390px); } .controls { padding: 16px; } }
+
+/* Durante a sessão o overlay vira tela cheia e o navegador remove o fundo dele.
+   Barra opaca em cima, painel opaco embaixo, centro livre para a mira. */
+.controlsActive { display: flex; flex-direction: column; justify-content: space-between; min-height: 100%; color: var(--ink, #242d29); }
+.liveTop, .liveBottom { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; background: var(--white, #fffefa); }
+.liveTop { padding-top: calc(12px + env(safe-area-inset-top)); border-bottom: 1px solid var(--line, #d8dcd4); }
+.liveBottom { padding-bottom: calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line, #d8dcd4); }
+.liveTop h2 { margin: 0; color: var(--green, #214b40); font-size: 16px; font-weight: 650; }
+.controlsActive .muted, .controlsActive .ok, .controlsActive .metric, .controlsActive .error { font-size: 14px; }
+.controlsActive .pointList { display: flex; gap: 6px; max-height: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.controlsActive .point, .controlsActive .pointSelected { flex: 0 0 auto; display: flex; flex-direction: column; justify-content: center; min-height: 48px; padding: 0 12px; font-size: 14px; }
+.controlsActive .pointSelected { background: var(--green, #214b40); color: #fff; }
+.point span, .pointSelected span { margin-left: 6px; font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.controlsActive .primary, .controlsActive .secondary { min-height: 48px; font-size: 15px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.controlsActive .point span, .controlsActive .pointSelected span { margin-left: 0; }
