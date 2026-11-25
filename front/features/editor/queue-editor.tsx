@@ -12,6 +12,7 @@ import type {
   AreaWallDistances
 } from "@testafila/core/contracts/scene-viewer";
 import {
+  applyQueueCommand,
   createQueueHistory,
   executeQueueCommand,
   getChainPeople,
@@ -21,7 +22,9 @@ import {
   undoQueue,
   validateQueueScene
 } from "@testafila/core/domain/queue";
+import { buildQueueTemplate, defaultQueueTemplate, type QueueTemplateParams } from "@testafila/core/domain/queue/templates";
 import { queueErrorsForUser } from "./queue-errors";
+import { QueueTemplatePanel } from "./queue-template-panel";
 import { ScenePreview } from "./scene-preview";
 import { UndoRedoBar } from "./undo-redo-bar";
 import { ItemThumbnail } from "./item-thumbnail";
@@ -39,6 +42,34 @@ type Props = {
   onSave?: (scene: ProjectScene) => void | Promise<void>;
 };
 type AreaDraft = { start: PointXZ; end: PointXZ };
+/** Modelo em ajuste: a planta mostra a prévia sobre `base`; Cancelar volta a ela. */
+type TemplateDraft = { base: QueueHistory; params: QueueTemplateParams; fill: boolean; error: string };
+
+function sceneCenter(scene: ProjectScene): PointXZ {
+  const points = scene.environment.perimeter;
+  const minX = Math.min(...points.map((p) => p.x)); const maxX = Math.max(...points.map((p) => p.x));
+  const minZ = Math.min(...points.map((p) => p.z)); const maxZ = Math.max(...points.map((p) => p.z));
+  return { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 };
+}
+
+/** Aplica o modelo (e, se pedido, a primeira pessoa e o preenchimento) como um único passo de desfazer. */
+function previewTemplate(draft: TemplateDraft): { history: QueueHistory } | { error: string } {
+  const base = draft.base.present;
+  const layout = buildQueueTemplate(draft.params, newId);
+  const added = applyQueueCommand(base, { type: "layout:add", posts: layout.posts, belts: layout.belts });
+  if (!added.valid) return { error: `O modelo não cabe aqui. ${queueErrorsForUser(added.errors, "").join(" ")} Mude o lugar, gire ou diminua as medidas.`.trim() };
+  let scene = added.scene;
+  if (draft.fill && getQueueMode(scene) === "empty") {
+    const head: PersonPlacement = { id: newId("person"), routeId: null, distanceAlongRouteMeters: null, ...layout.head };
+    const withHead = applyQueueCommand(scene, { type: "person:add", person: head });
+    if (withHead.valid) {
+      scene = withHead.scene;
+      const filled = applyQueueCommand(scene, { type: "queue:fill", idPrefix: `${newId("person")}-` });
+      if (filled.valid) scene = filled.scene;
+    }
+  }
+  return { history: { past: [...draft.base.past, base], present: scene, future: [] } };
+}
 
 const selectionLabels: Record<EditorSelection["kind"], string> = { post: "Poste", person: "Pessoa", belt: "Fita", area: "Área restrita", route: "Percurso" };
 
@@ -69,6 +100,7 @@ export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onConti
   const [projector, setProjector] = useState<FloorProjector | null>(null);
   const [placementPreview, setPlacementPreview] = useState<{ kind: "post" | "person"; point: PointXZ } | null>(null);
   const [moveSelectedMode, setMoveSelectedMode] = useState(false);
+  const [templateDraft, setTemplateDraft] = useState<TemplateDraft | null>(null);
   const [cameraAction, setCameraAction] = useState<{ id: number; type: CameraActionType }>();
   const cameraActionId = useRef(0);
   const lastAppendAt = useRef(0);
@@ -154,8 +186,47 @@ export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onConti
     }
   }, [run, scene.people.length]);
 
+  const updateTemplate = useCallback((draft: TemplateDraft) => {
+    const result = previewTemplate(draft);
+    if ("error" in result) {
+      setTemplateDraft({ ...draft, error: result.error });
+      return;
+    }
+    setTemplateDraft({ ...draft, error: "" });
+    setHistory(result.history);
+    onSceneChange(result.history.present);
+  }, [onSceneChange]);
+
+  const openTemplates = useCallback(() => {
+    setSelection(null);
+    setTool("select");
+    setInteractionMode("edit");
+    setInspectorOpen(true);
+    setError("");
+    setMessage("");
+    updateTemplate({ base: history, params: defaultQueueTemplate("zigzag", sceneCenter(history.present)), fill: getQueueMode(history.present) === "empty", error: "" });
+  }, [history, updateTemplate]);
+
+  const cancelTemplate = useCallback(() => {
+    if (!templateDraft) return;
+    setHistory(templateDraft.base);
+    onSceneChange(templateDraft.base.present);
+    setTemplateDraft(null);
+    setMessage("Modelo descartado.");
+  }, [onSceneChange, templateDraft]);
+
+  const confirmTemplate = useCallback(() => {
+    setTemplateDraft(null);
+    setMessage("Modelo aplicado. Ajuste postes e fitas se precisar; desfazer remove o modelo inteiro.");
+  }, []);
+
   const handleFloorPoint = useCallback((point: PointXZ) => {
     if (interactionMode === "navigate") return;
+
+    if (templateDraft) {
+      updateTemplate({ ...templateDraft, params: { ...templateDraft.params, center: point } });
+      return;
+    }
 
     if (moveSelectedMode && selection) {
       if (selectedPost) run({ type: "post:move", id: selectedPost.id, position: point }, "Poste movido.");
@@ -174,7 +245,7 @@ export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onConti
     }
     if (tool === "post") placePost(point);
     else if (tool === "person") placePerson(point);
-  }, [interactionMode, moveSelectedMode, placePerson, placePost, run, selectedArea, selectedPerson, selectedPost, selection, tool]);
+  }, [interactionMode, moveSelectedMode, placePerson, placePost, run, selectedArea, selectedPerson, selectedPost, selection, templateDraft, tool, updateTemplate]);
 
   const handleSelect = useCallback((next: EditorSelection | null) => {
     setSelection(next);
@@ -252,6 +323,21 @@ export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onConti
     }
   }
 
+  function fillQueue() {
+    const before = scene.queue.personIds.length;
+    const result = executeQueueCommand(history, { type: "queue:fill", idPrefix: `${newId("person")}-` });
+    if (!result.valid) {
+      setError(queueErrorsForUser(result.errors, "Não há espaço livre atrás da última pessoa.").join(" "));
+      setMessage("");
+      return;
+    }
+    setHistory(result.history);
+    onSceneChange(result.history.present);
+    const added = result.history.present.queue.personIds.length - before;
+    setError("");
+    setMessage(added === 1 ? "1 pessoa adicionada seguindo a fila." : `${added} pessoas adicionadas seguindo a fila. Desfazer remove todas.`);
+  }
+
   function convertLegacyQueue() {
     setInspectorOpen(true);
     run({ type: "queue:convert-legacy" }, "Pessoas ligadas em fila. Use desfazer para voltar.");
@@ -306,6 +392,8 @@ export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onConti
   }
 
   function undo() {
+    // Com um modelo em ajuste, desfazer descarta a prévia inteira.
+    if (templateDraft) { cancelTemplate(); return; }
     if (history.past.length) {
       const next = undoQueue(history);
       setHistory(next);
@@ -317,7 +405,7 @@ export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onConti
   }
 
   function redo() {
-    if (history.future.length) {
+    if (!templateDraft && history.future.length) {
       const next = redoQueue(history);
       setHistory(next);
       onSceneChange(next.present);
@@ -551,7 +639,7 @@ export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onConti
               <span>Fita</span>
             </button>
 
-            {queueMode === "empty" ? (
+            {templateDraft ? null : queueMode === "empty" ? (
               <button
                 type="button"
                 className={tool === "person" ? "palette-item active" : "palette-item"}
@@ -577,7 +665,32 @@ export function QueueEditor({ initialScene, mode, onSceneChange, onBack, onConti
                 <span>{queueMode === "chain" ? "+1 pessoa" : "Ligar fila"}</span>
               </button>
             )}
+
+            {queueMode === "chain" && !templateDraft && (
+              <button type="button" className="palette-item" onClick={fillQueue} aria-label="Preencher a fila com pessoas atrás da última, seguindo o corredor">
+                <ItemThumbnail kind="person" />
+                <span>Preencher fila</span>
+              </button>
+            )}
           </div>
+
+          {templateDraft ? (
+            <QueueTemplatePanel
+              params={templateDraft.params}
+              canFill={getQueueMode(templateDraft.base.present) === "empty"}
+              fill={templateDraft.fill}
+              error={templateDraft.error}
+              peopleCount={scene.people.length}
+              onChange={(params) => updateTemplate({ ...templateDraft, params })}
+              onFillChange={(fill) => updateTemplate({ ...templateDraft, fill })}
+              onConfirm={confirmTemplate}
+              onCancel={cancelTemplate}
+            />
+          ) : (
+            <button type="button" className="tool-link area-quick-action" onClick={openTemplates}>
+              Modelos de fila (reta, L, U, zigue-zague)
+            </button>
+          )}
 
           <button
             type="button"

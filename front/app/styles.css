@@ -1012,3 +1012,23 @@ button, a, summary, select { -webkit-tap-highlight-color: transparent; touch-act
 .palette-item img, .selected-item-title img { width: 34px; height: 34px; flex: 0 0 auto; object-fit: contain; }
 
 .creation-camera-stage { width: 100%; min-height: calc(100dvh - 140px); }
+
+/* Modelos de fila: tipo, medidas e posição, com prévia direto na planta. */
+.template-panel { display: grid; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--white); }
+.template-kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.template-kind { min-height: 76px; display: grid; justify-items: center; align-content: center; gap: 4px; padding: 6px 4px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: transparent; color: var(--ink); font-size: 12px; font-weight: 600; cursor: pointer; }
+.template-kind.active { border-color: var(--green); background: rgba(33, 75, 64, .08); color: var(--green); }
+.template-kind:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(33, 75, 64, .24); }
+.template-thumb line { stroke: var(--green); stroke-width: 1.6; stroke-linecap: round; }
+.template-thumb circle { fill: var(--green); }
+.template-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
+.template-field { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.template-field input { min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); font-size: 15px; font-variant-numeric: tabular-nums; }
+.template-field input:focus-visible { outline: none; border-color: var(--green); }
+.template-rotate { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.template-rotate span { flex: 1 1 140px; }
+.template-rotate .button-secondary { min-height: 44px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; }
+.template-fill { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 13px; }
+.template-fill input { width: 20px; height: 20px; accent-color: var(--green); }
+.template-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.template-actions .button-primary { flex: 1 1 160px; }

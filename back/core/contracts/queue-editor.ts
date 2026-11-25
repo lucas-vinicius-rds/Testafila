@@ -24,6 +24,14 @@ export type QueueCommand =
   | { type: 'person:rotate'; id: EntityId; yawRadians: number }
   // Sempre atrás da última pessoa da cadeia. sourceId é aceito e ignorado.
   | { type: 'person:append'; id: EntityId; sourceId?: EntityId }
+  /**
+   * Acrescenta pessoas atrás da última da cadeia seguindo o corredor livre: segue em
+   * frente e, diante de parede, área, poste, fita ou outra pessoa, vira o mínimo
+   * necessário. Para em `maxPeople` novas pessoas ou quando não há mais espaço.
+   */
+  | { type: 'queue:fill'; idPrefix: string; maxPeople?: number }
+  /** Acrescenta postes e fitas de uma vez (um passo de desfazer), p. ex. um modelo de fila. */
+  | { type: 'layout:add'; posts: Stanchion[]; belts: Belt[] }
   | { type: 'queue:convert-legacy' }
   | { type: 'people:clear'; routeId?: EntityId }
   | { type: 'simulation:spacing'; spacingMeters: number };

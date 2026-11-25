@@ -505,6 +505,83 @@ function removeChainPerson(scene: ProjectScene, id: string): ProjectScene {
   };
 }
 
+const MAX_FILL_PEOPLE = 1000;
+/** Desvios testados a cada passo, de 5 em 5°. Acima de 90° a fila voltaria sobre si. */
+const FILL_TURNS_RADIANS = [0, ...Array.from({ length: 18 }, (_, index) => (index + 1) * Math.PI / 36).flatMap((turn) => [turn, -turn])];
+/** Folga além da qual um obstáculo não puxa mais a fila: em área aberta ela segue reta. */
+const FILL_CLEARANCE_CAP_METERS = 1.1;
+/** Saiu do corredor quando a folga passa a mais larga vista nele por esta margem. */
+const FILL_CORRIDOR_EXIT_MARGIN_METERS = 0.3;
+/** Sem corredor e sem quantidade pedida, a fila aberta para aqui. */
+export const OPEN_FILL_DEFAULT_PEOPLE = 20;
+/** Quanto vale cada metro de folga em radianos de desvio: mantém a fila no meio do corredor. */
+const FILL_CENTERING_WEIGHT = 1.5;
+
+/** Distância livre até a parede, área, poste ou fita mais próxima, limitada ao teto. */
+function obstacleClearance(point: PointXZ, scene: ProjectScene): number {
+  let nearest = FILL_CLEARANCE_CAP_METERS;
+  for (const [start, end] of polygonEdges(scene.environment.perimeter)) nearest = Math.min(nearest, distancePointToSegment(point, start, end).distance);
+  for (const area of scene.restrictedAreas) {
+    for (const [start, end] of polygonEdges(area.vertices)) nearest = Math.min(nearest, distancePointToSegment(point, start, end).distance);
+  }
+  for (const post of scene.posts) nearest = Math.min(nearest, distance(point, post.position) - post.baseRadiusMeters);
+  for (const belt of scene.belts) {
+    const [start, end] = beltEndpoints(scene, belt);
+    if (start && end) nearest = Math.min(nearest, distancePointToSegment(point, start, end).distance);
+  }
+  return nearest;
+}
+
+/**
+ * Caminha a partir da última pessoa da cadeia, sempre para trás dela. A cada passo
+ * testa direções até 90° da atual e fica com a que desvia menos e mais se afasta dos
+ * obstáculos. Assim a fila segue pelo meio de corredores de fitas (reta, L, U,
+ * zigue-zague), faz as curvas e contorna obstáculos sem sair do espaçamento.
+ */
+function fillChain(scene: ProjectScene, idPrefix: string, requested: number | undefined): PersonPlacement[] {
+  const { spacingMeters: spacing, personRadiusMeters: radius, clearanceMeters: clearance } = scene.simulation;
+  const occupied = createCollisionIndex(2 * radius + clearance, scene.people.map((person) => person.position));
+  const added: PersonPlacement[] = [];
+  let last = getChainPeople(scene).at(-1)!;
+  // Direção de caminhada = costas da última pessoa.
+  let heading = Math.atan2(-Math.sin(last.yawRadians), -Math.cos(last.yawRadians));
+  let lastTurn = 0;
+  // Começando entre fitas ou paredes, preenche o corredor e para ao sair dele.
+  let widest = obstacleClearance(last.position, scene);
+  const inCorridor = widest < FILL_CLEARANCE_CAP_METERS - EPSILON;
+  const limit = Math.min(requested ?? (inCorridor ? MAX_FILL_PEOPLE : OPEN_FILL_DEFAULT_PEOPLE), MAX_FILL_PEOPLE, MAX_PEOPLE - scene.people.length);
+  const step = (angle: number): PointXZ => ({ x: last.position.x + Math.sin(angle) * spacing, z: last.position.z + Math.cos(angle) * spacing });
+
+  while (added.length < limit) {
+    let best: { angle: number; turn: number; cost: number; clearance: number } | null = null;
+    for (const turn of FILL_TURNS_RADIANS) {
+      const point = step(heading + turn);
+      if (occupied.overlaps(point) || !pointClear(point, radius, scene) || !segmentClear(last.position, point, radius, scene)) continue;
+      // Empate: vira para o mesmo lado da última curva, mantendo o sentido da serpentina.
+      const room = obstacleClearance(point, scene);
+      const cost = Math.abs(turn) - FILL_CENTERING_WEIGHT * room + (turn * lastTurn < 0 ? 1e-3 : 0);
+      if (!best || cost < best.cost) best = { angle: heading + turn, turn, cost, clearance: room };
+    }
+    if (!best) break;
+    if (inCorridor && best.clearance > widest + FILL_CORRIDOR_EXIT_MARGIN_METERS) break;
+    widest = Math.max(widest, best.clearance);
+    if (best.turn !== 0) lastTurn = Math.sign(best.turn);
+    const position = step(best.angle);
+    const person: PersonPlacement = {
+      id: `${idPrefix}${added.length}`,
+      routeId: null,
+      distanceAlongRouteMeters: null,
+      position,
+      yawRadians: linkYaw(position, last.position),
+    };
+    added.push(person);
+    occupied.insert(position);
+    last = person;
+    heading = normalizeYaw(best.angle);
+  }
+  return added;
+}
+
 function assertNoChain(scene: ProjectScene): void {
   if (getQueueMode(scene) === 'chain') throw new Error('Percurso legado não pode ser usado com a fila interligada');
 }
@@ -702,6 +779,26 @@ function applyCommand(scene: ProjectScene, command: QueueCommand): ProjectScene 
         }],
         queue: { personIds: [...scene.queue.personIds, command.id] },
       };
+      break;
+    }
+    case 'queue:fill': {
+      const mode = getQueueMode(scene);
+      if (mode === 'legacy') throw new Error('Converta as pessoas antigas em fila antes de continuar');
+      if (mode === 'empty') throw new Error('Defina a primeira pessoa da fila');
+      if (!command.idPrefix) throw new Error('Prefixo de identificação inválido');
+      if (command.maxPeople !== undefined && (!Number.isInteger(command.maxPeople) || command.maxPeople < 1)) throw new Error('Quantidade de pessoas inválida');
+      const added = fillChain(scene, command.idPrefix, command.maxPeople);
+      if (!added.length) throw new Error('Não há espaço livre atrás da última pessoa da fila');
+      updated = {
+        ...scene,
+        people: [...scene.people, ...added],
+        queue: { personIds: [...scene.queue.personIds, ...added.map((person) => person.id)] },
+      };
+      break;
+    }
+    case 'layout:add': {
+      if (!command.posts.length && !command.belts.length) throw new Error('Modelo sem postes nem fitas');
+      updated = { ...scene, posts: [...scene.posts, ...command.posts], belts: [...scene.belts, ...command.belts] };
       break;
     }
     case 'queue:convert-legacy': {
