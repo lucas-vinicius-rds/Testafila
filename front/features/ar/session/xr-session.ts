@@ -67,6 +67,8 @@ export type XrSessionOptions = Readonly<{
   planes?: boolean;
   /** Needs `stabilizer`. Reports what to tell the user about finding the floor. */
   onFloorHintChange?: (hint: XrFloorHint) => void;
+  /** Reports whether a `placeWhenStable` request is waiting for the aim to settle. */
+  onPendingPlaceChange?: (pending: boolean) => void;
 }>;
 
 export type XrSessionController = Readonly<{
@@ -84,7 +86,15 @@ export type XrSessionController = Readonly<{
   tracking: () => XrTracking;
   /** Latest floor hit, or null while tracking is lost or the session is hidden. */
   currentHit: () => XrPoint | null;
+  /**
+   * Places now when the aim is stable; otherwise waits up to `timeoutMs` for it to
+   * settle and places then. The point is the same stable one either way, so the
+   * user can tap early without losing precision. A new request replaces the old one.
+   */
+  placeWhenStable: (place: (hit: XrPoint) => void, timeoutMs?: number) => void;
 }>;
+
+const PENDING_PLACE_TIMEOUT_MS = 2500;
 
 export class DomOverlayUnavailableError extends Error {
   constructor() {
@@ -163,6 +173,13 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
   let drift: Drift = NO_DRIFT;
   let planeY: number | null = null;
   let frameCount = 0;
+  let pendingPlace: { place: (hit: XrPoint) => void; until: number } | null = null;
+
+  const setPendingPlace = (next: typeof pendingPlace) => {
+    const changed = Boolean(pendingPlace) !== Boolean(next);
+    pendingPlace = next;
+    if (changed) options.onPendingPlaceChange?.(Boolean(next));
+  };
 
   const setFloorHint = (next: XrFloorHint) => {
     if (floorHint === next) return;
@@ -239,6 +256,7 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
 
   const hideReticle = () => {
     latestHit = null;
+    setPendingPlace(null);
     options.stabilizer?.interrupt();
     guidance?.reset();
     setFloorHint('none');
@@ -258,6 +276,7 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
     guidance?.reset();
     setFloorHint('none');
     dropAnchors();
+    setPendingPlace(null);
     latestHit = null;
     activeSession = null;
     const runtime = options.getRuntime();
@@ -338,6 +357,12 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
       setTracking('surface');
     } else {
       setTracking('searching');
+    }
+    // After the tracking update, so the placement sees the same state as a tap would.
+    if (pendingPlace) {
+      const request = pendingPlace;
+      if (hit) { setPendingPlace(null); request.place(hit); }
+      else if (performance.now() > request.until) setPendingPlace(null);
     }
     options.onFrame?.(shown);
     draw();
@@ -436,5 +461,10 @@ export function createXrSessionController(options: XrSessionOptions): XrSessionC
     isVisible: () => activeSession?.visibilityState === 'visible',
     tracking: () => tracking,
     currentHit: () => latestHit,
+    placeWhenStable: (place, timeoutMs = PENDING_PLACE_TIMEOUT_MS) => {
+      if (!activeSession) return;
+      if (latestHit && tracking === 'surface') { setPendingPlace(null); place(latestHit); return; }
+      setPendingPlace({ place, until: performance.now() + timeoutMs });
+    },
   };
 }

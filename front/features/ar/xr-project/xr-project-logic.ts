@@ -86,3 +86,42 @@ export function projectRootPose(transform: SessionTransform) {
 export function withManualRotation(transform: SessionTransform, radians: number): SessionTransform {
   return { ...transform, yawRadians: transform.yawRadians - radians };
 }
+
+export type MinimapPoint = Readonly<{ x: number; y: number }>;
+
+/**
+ * Fits the plan into a `width` × `height` box seen from above, keeping proportions:
+ * +X to the right and +Z down, the same top view the 3D editor shows.
+ */
+export function minimapPoints(points: readonly PointXZ[], width: number, height: number, padding: number): MinimapPoint[] {
+  if (!points.length) return [];
+  const xs = points.map((p) => p.x);
+  const zs = points.map((p) => p.z);
+  const minX = Math.min(...xs); const minZ = Math.min(...zs);
+  const spanX = Math.max(...xs) - minX; const spanZ = Math.max(...zs) - minZ;
+  const scale = Math.min((width - 2 * padding) / Math.max(spanX, 1e-6), (height - 2 * padding) / Math.max(spanZ, 1e-6));
+  const offsetX = (width - spanX * scale) / 2; const offsetY = (height - spanZ * scale) / 2;
+  return points.map((p) => ({ x: offsetX + (p.x - minX) * scale, y: offsetY + (p.z - minZ) * scale }));
+}
+
+export type AimGuide =
+  | Readonly<{ kind: 'none' }>
+  /** One point registered: compare the walked distance with the plan's. */
+  | Readonly<{ kind: 'from-first'; observedMeters: number; plannedMeters: number }>
+  /** Two or more: the plan says where the target corner is. */
+  | Readonly<{ kind: 'to-target'; distanceMeters: number; expected: XrPoint }>;
+
+export function aimGuide(correspondences: readonly Correspondence[], target: PointXZ | null, aim: XrPoint | null, alignment: AlignmentResult | null): AimGuide {
+  if (!target) return { kind: 'none' };
+  if (alignment) {
+    const expected = transformProjectPoint(target, alignment.transform);
+    return { kind: 'to-target', distanceMeters: aim ? Math.hypot(aim.x - expected.x, aim.z - expected.z) : Number.NaN, expected };
+  }
+  const [first] = correspondences;
+  if (!first || !aim) return { kind: 'none' };
+  return {
+    kind: 'from-first',
+    observedMeters: Math.hypot(aim.x - first.session.x, aim.z - first.session.z),
+    plannedMeters: Math.hypot(target.x - first.project.x, target.z - first.project.z),
+  };
+}

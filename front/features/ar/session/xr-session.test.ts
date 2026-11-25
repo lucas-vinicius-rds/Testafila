@@ -339,3 +339,36 @@ test('floor hints follow the stabilizer and clear when tracking is lost', async 
   harness.tick(4000);
   assert.deepEqual(hints, ['scan', 'none', 'aim-floor', 'none']);
 });
+
+test('a placement asked before the aim settles happens once it is stable, at the stable point', async () => {
+  const pending: boolean[] = [];
+  const harness = createHarness({ stabilizer: createHitStabilizer(), onPendingPlaceChange: (value) => pending.push(value) });
+  await harness.controller.start();
+  harness.tick(0);
+  const placed: { x: number; z: number }[] = [];
+  harness.controller.placeWhenStable((hit) => placed.push(hit));
+  assert.equal(placed.length, 0);
+  assert.deepEqual(pending, [true]);
+  for (let i = 1; i <= 60 && !placed.length; i += 1) harness.tick(i * 1000 / 60);
+  assert.equal(placed.length, 1);
+  assert.ok(Math.abs(placed[0].x - 1) < 1e-9 && Math.abs(placed[0].z - 2) < 1e-9);
+  assert.deepEqual(pending, [true, false]);
+  for (let i = 61; i <= 70; i += 1) harness.tick(i * 1000 / 60);
+  assert.equal(placed.length, 1);
+});
+
+test('a stable aim places immediately and finishing drops a waiting placement', async () => {
+  const harness = createHarness({ stabilizer: createHitStabilizer() });
+  await harness.controller.start();
+  for (let i = 0; i <= 60; i += 1) harness.tick(i * 1000 / 60);
+  let count = 0;
+  harness.controller.placeWhenStable(() => { count += 1; });
+  assert.equal(count, 1);
+  const fresh = createHarness({ stabilizer: createHitStabilizer() });
+  await fresh.controller.start();
+  fresh.tick(0);
+  fresh.controller.placeWhenStable(() => { count += 1; });
+  await fresh.controller.finish(true);
+  for (let i = 1; i <= 60; i += 1) fresh.tick(i * 1000 / 60);
+  assert.equal(count, 1);
+});

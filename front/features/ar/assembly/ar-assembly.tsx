@@ -104,6 +104,7 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
   const [starting, setStarting] = useState(false);
   const [tracking, setTracking] = useState<XrTracking>('inactive');
   const [floorHint, setFloorHint] = useState<XrFloorHint>('none');
+  const [placing, setPlacing] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
   const [startFailure, setStartFailure] = useState<string | null>(null);
   const [planChoice, setPlanChoice] = useState(false);
@@ -138,6 +139,7 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
     anchors: true,
     planes: true,
     onFloorHintChange: setFloorHint,
+    onPendingPlaceChange: setPlacing,
     onTrackingChange: setTracking,
     onActive: () => setSessionActive(true),
     onFinished: () => {
@@ -195,10 +197,14 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
     return () => overlay.removeEventListener('beforexrselect', preventOnControls);
   }, []);
 
+  // A tap while the circle is still settling is kept and placed as soon as it firms,
+  // at the same stable point a later tap would get.
   const placeHere = useCallback(() => {
-    const hit = xrSession.currentHit();
-    if (exitOpenRef.current || planChoiceRef.current || !hit || !canMarkCorner({ visible: xrSession.isVisible(), tracking: xrSession.tracking(), hit })) return;
-    commit(placeAtHit(stateRef.current, hit, createId));
+    if (exitOpenRef.current || planChoiceRef.current || !xrSession.isVisible()) return;
+    xrSession.placeWhenStable((hit) => {
+      if (exitOpenRef.current || planChoiceRef.current || !canMarkCorner({ visible: xrSession.isVisible(), tracking: xrSession.tracking(), hit })) return;
+      commit(placeAtHit(stateRef.current, hit, createId));
+    });
   }, [commit, xrSession]);
 
   useEffect(() => { selectHandlerRef.current = placeHere; }, [placeHere]);
@@ -258,7 +264,9 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
   const nextStep = ASSEMBLY_STEPS[stepIndex + 1] ?? null;
   const appending = state.step === 'people' && hasPeople(state) && !realigning;
   const suspended = tracking === 'lost' || tracking === 'hidden';
-  const canPlace = appending ? !suspended : tracking === 'surface';
+  // The floor is known and the circle is on it: a tap is accepted and waits for it to firm.
+  const aiming = tracking === 'surface' || (tracking === 'searching' && floorHint === 'none');
+  const canPlace = appending ? !suspended : aiming;
   const walls = wallLengthsMeters(draft);
   const closingWall = closingWallMeters(draft);
   const unavailable = capability.status !== 'checking' && capability.status !== 'supported';
@@ -299,7 +307,7 @@ export function ArAssembly({ initialScene, onComplete, onUseTypedMeasures, onCan
         <button type="button" className={styles.tool} aria-label="Girar a fila 15 graus para o outro lado" onClick={() => commit(turnQueue(stateRef.current, PERSON_TURN_RADIANS))}>+15°</button>
         {SPACING_OPTIONS_METERS.map((option) => <button key={option} type="button" className={option === spacing ? styles.toolActive : styles.tool} aria-pressed={option === spacing} aria-label={`Espaçamento de ${formatMeters(option)}`} onClick={() => commit(setSpacing(stateRef.current, option))}>{String(option).replace('.', ',')}</button>)}
       </div>}
-      <button type="button" className={styles.primary} disabled={!canPlace} onClick={appending ? () => commit(appendPerson(stateRef.current, createId)) : placeHere}>{primaryLabel(state)}</button>
+      <button type="button" className={styles.primary} disabled={!canPlace} onClick={appending ? () => commit(appendPerson(stateRef.current, createId)) : placeHere}>{placing ? 'Segure parado…' : primaryLabel(state)}</button>
       {!realigning && <>
         <div className={styles.row}>
           <button type="button" className={styles.secondary} disabled={!canUndo(state)} onClick={() => commit(undo(stateRef.current))}>Desfazer</button>

@@ -76,3 +76,25 @@ test('a positive manual turn keeps the direction of rotation.y', () => {
   const turned = withManualRotation(start, Math.PI / 36);
   assert.ok(Math.abs(projectRootPose(turned).rotationY - (projectRootPose(start).rotationY + Math.PI / 36)) < 1e-12);
 });
+
+test('the minimap keeps proportions and centers the plan', async () => {
+  const { minimapPoints } = await import('./xr-project-logic.ts');
+  const points = minimapPoints([{ id: 'a', x: 0, z: 0 }, { id: 'b', x: 4, z: 0 }, { id: 'c', x: 4, z: 2 }, { id: 'd', x: 0, z: 2 }] as never, 100, 100, 10);
+  assert.deepEqual(points[0], { x: 10, y: 30 });
+  assert.deepEqual(points[2], { x: 90, y: 70 });
+});
+
+test('the aim guide compares distances with one point and points at the corner with two', async () => {
+  const { aimGuide, alignFromCorrespondences } = await import('./xr-project-logic.ts');
+  const one = [{ project: { x: 0, z: 0 }, session: { x: 1, y: 0, z: 1 } }];
+  const fromFirst = aimGuide(one, { x: 3, z: 4 }, { x: 1, y: 0, z: 3 }, null);
+  assert.deepEqual(fromFirst, { kind: 'from-first', observedMeters: 2, plannedMeters: 5 });
+  const two = [...one, { project: { x: 3, z: 0 }, session: { x: 4, y: 0, z: 1 } }];
+  const guide = aimGuide(two, { x: 3, z: 4 }, { x: 4, y: 0, z: 4 }, alignFromCorrespondences(two));
+  assert.equal(guide.kind, 'to-target');
+  if (guide.kind === 'to-target') {
+    assert.ok(Math.abs(guide.expected.x - 4) < 1e-9 && Math.abs(guide.expected.z - 5) < 1e-9);
+    assert.ok(Math.abs(guide.distanceMeters - 1) < 1e-9);
+  }
+  assert.deepEqual(aimGuide(one, null, null, null), { kind: 'none' });
+});

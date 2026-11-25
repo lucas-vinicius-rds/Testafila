@@ -47,3 +47,17 @@
 .controlsActive .primary, .controlsActive .secondary { min-height: 48px; font-size: 15px; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .controlsActive .point span, .controlsActive .pointSelected span { margin-left: 0; }
+.minimap { display: block; width: 100%; max-height: 112px; touch-action: manipulation; }
+.minimapPlan { fill: rgba(33, 75, 64, .08); stroke: var(--green, #214b40); stroke-width: 1.5; stroke-linejoin: round; }
+.corner, .cornerSelected, .cornerDone { cursor: pointer; font: 650 11px/1 system-ui, sans-serif; }
+.corner circle:not(.cornerHit) { fill: var(--white, #fffefa); stroke: var(--green, #214b40); stroke-width: 1.5; }
+.corner text { fill: var(--green, #214b40); }
+.cornerSelected circle:not(.cornerHit):not(.cornerHalo) { fill: var(--green, #214b40); }
+.cornerSelected text { fill: #fff; }
+.cornerHalo { fill: none; stroke: var(--green, #214b40); stroke-width: 2; opacity: .35; }
+.cornerDone { cursor: default; }
+.cornerDone circle:not(.cornerHit) { fill: var(--muted, #606963); stroke: none; }
+.cornerDone text { fill: #fff; }
+.cornerHit { fill: transparent; }
+.corner:focus-visible, .cornerSelected:focus-visible { outline: none; }
+.corner:focus-visible circle:not(.cornerHit), .cornerSelected:focus-visible circle:not(.cornerHit) { stroke-width: 3; }

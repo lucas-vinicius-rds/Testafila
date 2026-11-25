@@ -96,3 +96,50 @@ test('hits well above the detected floor plane are not learned as floor', () => 
   for (let i = 40; i < 80; i += 1) last = s.update({ x: 0, y: 0.01, z: 0 }, null, i * FRAME_MS, 0);
   assert.ok(last.floorY !== null && Math.abs(last.floorY - 0.01) < 1e-9);
 });
+
+test('once stable, tremor a bit wider than the hold radius keeps it stable', () => {
+  const s = createHitStabilizer();
+  const settled = feed(s, 40, () => ({ x: 1, y: 0, z: 2 }));
+  assert.equal(settled.stable, true);
+  let flips = 0;
+  let last = settled;
+  for (let i = 0; i < 60; i += 1) {
+    // ±3.5 cm: beyond the 2.5 cm hold radius, inside the 5 cm release radius.
+    const r = s.update({ x: 1 + (i % 2 ? 0.035 : -0.035), y: 0, z: 2 }, null, 1000 + i * FRAME_MS);
+    if (r.stable !== last.stable) flips += 1;
+    last = r;
+  }
+  assert.equal(flips, 0);
+  assert.ok(Math.abs(last.point!.x - 1) < 0.01, JSON.stringify(last.point));
+});
+
+test('a one-frame spike neither breaks the hold nor releases the lock', () => {
+  const s = createHitStabilizer();
+  feed(s, 40, () => ({ x: 0, y: 0, z: 0 }));
+  const spike = s.update({ x: 0.2, y: 0, z: 0 }, null, 1000);
+  assert.equal(spike.stable, true);
+  assert.deepEqual(spike.point && Math.abs(spike.point.x) < 0.01, true);
+  assert.equal(s.update({ x: 0, y: 0, z: 0 }, null, 1000 + FRAME_MS).stable, true);
+});
+
+test('moving the aim away for longer than the grace releases the lock', () => {
+  const s = createHitStabilizer();
+  feed(s, 40, () => ({ x: 0, y: 0, z: 0 }));
+  let r = s.update({ x: 0.2, y: 0, z: 0 }, null, 1000);
+  for (let i = 1; i <= 20; i += 1) r = s.update({ x: 0.2, y: 0, z: 0 }, null, 1000 + i * FRAME_MS);
+  assert.ok(r.point && r.point.x > 0.1, JSON.stringify(r.point));
+});
+
+test('a far point under hand tremor still becomes stable', () => {
+  const ray = (z: number) => ({ origin: { x: 0, y: 1.5, z: 0 }, direction: { x: 0, y: -1.5, z } });
+  const settle = (distance: number) => {
+    const s = createHitStabilizer();
+    let r = s.update(null, null, 0);
+    for (let i = 0; i < 60; i += 1) {
+      const x = i % 2 ? 0.03 : -0.03;
+      r = s.update({ x, y: 0, z: -distance }, ray(-distance), i * FRAME_MS);
+    }
+    return r.stable;
+  };
+  assert.equal(settle(4), true);
+});
